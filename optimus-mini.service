@@ -1,0 +1,79 @@
+# ────────────────────────────────────────────────────────────
+#  Optimus Mini — systemd unit (reference template)
+#
+#  Install:
+#    sudo cp optimus-mini.service /etc/systemd/system/optimus-mini.service
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable --now optimus-mini
+#
+#  Before you do, EDIT the three paths below (WorkingDirectory, the user, and
+#  ExecStart) to match where you deployed the bot. Then see
+#  OPTIMUS_MINI_DEPLOY.md for the full walkthrough.
+#
+#  The resource limits here are the ones that keep a 580 MB / 750 MB host
+#  healthy: a hard memory ceiling, a CPU cap and journald rate limits, so a
+#  runaway bot cannot take the server down with it.
+# ────────────────────────────────────────────────────────────
+[Unit]
+Description=Optimus Mini — lightweight WhatsApp bot
+Documentation=file:///opt/optimus-mini/OPTIMUS_MINI_DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop breaker. Without this, a failure during startup restarts forever,
+# every RestartSec, burning CPU and filling the journal. After 6 starts in
+# 5 minutes systemd gives up and leaves the unit failed — which is what you want
+# to see, instead of a silently thrashing service.
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+# ── EDIT ME ────────────────────────────────────────────────
+User=optimus
+Group=optimus
+WorkingDirectory=/opt/optimus-mini
+ExecStart=/usr/bin/node --max-old-space-size=160 /opt/optimus-mini/mini.js
+# ───────────────────────────────────────────────────────────
+# The leading '-' makes the file optional: the bot also reads real environment
+# variables, and starts fine with placeholders when no .env is present.
+EnvironmentFile=-/opt/optimus-mini/.env
+Environment=NODE_ENV=production
+Environment=OPTIMUS_MINI=1
+
+# ── Restart policy ─────────────────────────────────────────
+Restart=always
+RestartSec=5
+# Give the socket time to close cleanly before SIGKILL. The bot exits on its own
+# well before this (its shutdown deadline is 8 s), and systemd does not start a
+# replacement until the old process is gone — so two copies never overlap.
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+# ── Resource ceilings (tune to the host) ───────────────────
+# MemoryHigh = soft limit (reclaim/throttle), MemoryMax = hard limit (OOM-kill
+# → Restart=always brings it straight back). Keep MAX_RSS_MB in .env slightly
+# BELOW MemoryMax so the bot restarts itself cleanly before systemd kills it.
+#
+# On a 580 MB host these leave ~350 MB for the OS and other services. Measured
+# Mini usage is ~80 MB idle / ~119 MB peak, so there is ~50 % headroom.
+MemoryHigh=180M
+MemoryMax=224M
+CPUQuota=70%
+
+# ── Logs: journald owns rotation and caps ──────────────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=optimus-mini
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=600
+
+# ── Hardening (does not weaken the bot's own auth) ─────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/optimus-mini
+
+[Install]
+WantedBy=multi-user.target

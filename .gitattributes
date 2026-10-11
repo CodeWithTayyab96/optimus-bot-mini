@@ -1,0 +1,29 @@
+# Normalise line endings in the repository to LF.
+#
+# Why this matters here: the project is developed on Windows but deployed to
+# Linux. Without this, Git commits CRLF, and then:
+#   • scripts/linux-measure.sh fails on the server with
+#     "bash: /usr/bin/env: bad interpreter: No such file or directory"
+#     (or "\r: command not found"), because of the trailing CR;
+#   • every diff shows whole-file changes when the two platforms alternate.
+#
+# `eol=lf` keeps the working tree LF everywhere, which is what the target
+# server needs.
+* text=auto eol=lf
+
+# Shell scripts must be LF, always.
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows-only helpers keep CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary assets must never be line-ending converted.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.gif  binary
+*.ico  binary
+*.zip  binary

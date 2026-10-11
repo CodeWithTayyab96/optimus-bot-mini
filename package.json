@@ -1,0 +1,98 @@
+{
+  "name": "optimusbot",
+  "version": "2.4.0",
+  "description": "Optimus Bot — WhatsApp Bot (full edition + Optimus Mini lightweight edition)",
+  "main": "index.js",
+  "scripts": {
+    "prestart": "node bootstrap.js --deps-only",
+    "start": "node index.js",
+    "boot": "node bootstrap.js",
+    "deps": "node bootstrap.js --deps-only",
+    "deps:check": "node bootstrap.js --check",
+    "start:optimized": "node --max-old-space-size=512 --optimize-for-size --gc-interval=100 index.js",
+    "cleanup": "node cleanup.js",
+    "reset-session": "node reset-session.js",
+    "pair": "node scripts/pair.js",
+    "pair:qr": "node scripts/pair.js --qr",
+    "pair:test": "node scripts/test-pairing.js",
+    "pair:clean": "node scripts/test-pairing.js --clean",
+    "start:clean": "npm run cleanup && npm run start:optimized",
+    "start:fresh": "npm run reset-session && npm start",
+    "install:panel": "npm install --legacy-peer-deps",
+    "install:force": "npm install --force",
+    "test": "node scripts/run-tests.js",
+    "docker:build": "docker build -t optimusbot .",
+
+    "mini": "node mini.js",
+    "start:mini": "node mini.js",
+    "mini:qr": "node mini.js --qr",
+    "install:mini": "npm ci --omit=dev --omit=optional --no-audit --no-fund",
+    "test:mini": "node scripts/run-mini-tests.js",
+    "deps:mini:check": "node scripts/check-mini-deps.js"
+  },
+  "keywords": [
+    "whatsapp-bot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^v7.0.0-rc.9",
+    "awesome-phonenumber": "^5.9.0",
+    "axios": "^1.8.4",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5",
+    "file-type": "^16.5.4",
+    "form-data": "^4.0.1",
+    "libphonenumber-js": "^1.11.18",
+    "node-cache": "^5.1.2",
+    "node-fetch": "^2.7.0",
+    "pino": "^8.21.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "optionalDependencies": {
+    "@adiwajshing/keyed-db": "^0.2.4",
+    "@distube/ytdl-core": "^4.14.4",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "cheerio": "^1.0.0-rc.12",
+    "ffmpeg-static": "^5.3.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "fs-extra": "^11.2.0",
+    "google-translate-api-x": "^10.7.3",
+    "gtts": "^0.2.1",
+    "human-readable": "^0.2.1",
+    "jimp": "^1.6.0",
+    "mammoth": "^1.12.0",
+    "moment-timezone": "^0.5.43",
+    "mumaker": "^2.0.0",
+    "node-id3": "^0.2.3",
+    "node-webpmux": "^3.1.0",
+    "node-youtube-music": "^0.8.3",
+    "pdf-parse": "^2.4.5",
+    "request": "^2.88.2",
+    "ruhend-scraper": "^8.3.0",
+    "sharp": "^0.32.6",
+    "youtube-yts": "^2.0.0",
+    "yt-search": "^2.12.1"
+  },
+  "overrides": {
+    "jimp": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.6",
+    "jest": "^30.4.2"
+  },
+  "allowScripts": {
+    "@whiskeysockets/baileys@7.0.0-rc13": true,
+    "es5-ext@0.10.64": true,
+    "ffmpeg-static@5.3.0": true,
+    "protobufjs@6.8.8": true,
+    "protobufjs@7.6.1": true,
+    "sharp@0.32.6": true,
+    "unrs-resolver@1.12.2": true
+  }
+}
