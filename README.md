@@ -7,7 +7,7 @@
 **A full-featured WhatsApp bot for group management, AI chat, media tools, productivity, and fun — built on [Baileys](https://github.com/WhiskeySockets/Baileys).**
 
 [![Version](https://img.shields.io/badge/version-2.0.0-blue?style=flat-square)](https://github.com/CodeWithTayyab96/Optimus-Bot)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-green?style=flat-square&logo=node.js)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue?style=flat-square)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-363%2F363%20passing-brightgreen?style=flat-square)](#testing)
 
@@ -81,7 +81,7 @@ Optimus Bot
 └── session/                  # WhatsApp session (gitignored)
 ```
 
-**Tech Stack:** Node.js ≥ 18 · Baileys (WhatsApp Web API) · Axios · Sharp · FFmpeg · Groq API · Google Gemini API · Cloudflare Workers AI · Pollinations · Open-Meteo · Google News RSS
+**Tech Stack:** Node.js ≥ 20 · Baileys (WhatsApp Web API) · Axios · Sharp · FFmpeg · Groq API · Google Gemini API · Cloudflare Workers AI · Pollinations · Open-Meteo · Google News RSS
 
 ---
 

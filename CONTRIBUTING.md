@@ -12,7 +12,7 @@ node index.js        # First run — enter pairing code
 npm test             # Run all smoke tests
 ```
 
-**Requirements:** Node.js ≥ 18, FFmpeg in PATH.
+**Requirements:** Node.js ≥ 20, FFmpeg in PATH.
 
 **Configuration:** Copy `settings.example.js` to `settings.js` (if it exists) or edit `settings.js` directly with your own API keys and owner number. **Never commit real credentials.**
 

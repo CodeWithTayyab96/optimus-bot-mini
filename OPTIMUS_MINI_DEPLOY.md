@@ -33,7 +33,7 @@ The full edition is untouched — `node index.js` behaves exactly as before.
 | Requirement | Notes |
 |---|---|
 | **Linux** (any small VPS/container) | No Docker, no database, no extra services |
-| **Node.js ≥ 18** (22 LTS recommended) | the runtime itself needs ~90–110 MB of disk and ~50 MB of RAM |
+| **Node.js ≥ 20** (22 LTS recommended) | the runtime itself needs ~90–110 MB of disk and ~50 MB of RAM |
 | **~130 MB free disk for the bot** | install (~106 MB, incl. the required `sharp`) + bounded logs/session |
 | **~250 MB available RAM** | measured ~83 MB idle, ~119 MB peak, plus headroom |
 | **Outbound HTTPS** | to WhatsApp + the APIs your commands use |

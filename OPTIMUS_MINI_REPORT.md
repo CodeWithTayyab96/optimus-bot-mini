@@ -34,7 +34,7 @@ command — the exact failure mode that makes "lite" forks rot.
 
 | Item | Value |
 |---|---|
-| Runtime | Node.js ≥ 18 (Baileys v7), CommonJS |
+| Runtime | Node.js ≥ 20 (Baileys v7), CommonJS |
 | Entry point | `index.js` (pairing + socket + supervisors) |
 | Message core | `main.js` (`handleMessages`, group events, moderation pipeline) |
 | Commands | 237 files across 12 categories, loaded dynamically by `lib/commandLoader.js` |
