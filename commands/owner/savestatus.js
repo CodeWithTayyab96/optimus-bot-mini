@@ -15,6 +15,7 @@
  * file — see the deployment docs.
  */
 const style = require('../../lib/messageStyle');
+const notify = require('../../lib/notify');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 // A quoted message may be wrapped — a view-once reply arrives as
@@ -68,12 +69,20 @@ module.exports = {
                 ));
             }
 
-            await extra.reply(style.processing('Saving media...'));
-
-            const stream = await downloadContentFromMessage(src[`${kind}Message`], kind);
-            const chunks = [];
-            for await (const chunk of stream) chunks.push(chunk);
-            const buffer = Buffer.concat(chunks);
+            // No "⏳ Saving media…" bubble and no trailing "Saved." confirmation:
+            // the media landing in the chat is the confirmation, and the privacy
+            // reminder rides on its caption instead of a second message. This
+            // command used to cost three sends for one file.
+            const stopTyping = notify.startTyping(sock, extra.chatId);
+            let buffer;
+            try {
+                const stream = await downloadContentFromMessage(src[`${kind}Message`], kind);
+                const chunks = [];
+                for await (const chunk of stream) chunks.push(chunk);
+                buffer = Buffer.concat(chunks);
+            } finally {
+                stopTyping();
+            }
 
             if (!buffer.length) {
                 return await extra.reply(style.error('Downloaded media was empty.'));
@@ -84,10 +93,9 @@ module.exports = {
             else if (kind === 'video') payload.video = buffer;
             else payload.audio = buffer;
 
-            payload.caption = '💾 Saved media';
+            payload.caption = '💾 Saved · ⚠️ Respect the poster’s privacy — only keep media you’re entitled to.';
             await sock.sendMessage(extra.chatId, payload, { quoted: message });
-
-            return await extra.reply(style.info('Saved. ⚠️ Respect the poster’s privacy — only save media you’re entitled to keep.'));
+            return;
         } catch (e) {
             console.error('[savestatus] error:', e.message);
             return await extra.reply(style.error('Failed to save that media.'));

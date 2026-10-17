@@ -69,8 +69,21 @@ const { handleMessageRevocation, storeMessage } = safeRequire('./commands/owner/
 const { handleStatusUpdate } = safeRequire('./commands/owner/autostatus');
 // Records every incoming status so `.status <number>` has something to serve.
 // Statuses are PUSHED by WhatsApp — there is no fetch-on-demand API — so if it
-// is not captured here, it is gone.
+// is not captured here, it is gone. Capture is OFF by default and can be gated
+// to an allowlist; see `.status save on|off`.
 const statusCache = safeRequire('./lib/statusCache');
+// Reclaim disk on a timer: cached statuses expire after 24h, and nothing else
+// would delete them while no new status arrives.
+if (statusCache && statusCache.sweep) {
+    setInterval(() => {
+        try {
+            const removed = statusCache.sweep();
+            if (removed) console.log(`🧹 statusCache swept ${removed} expired item(s)`);
+        } catch (e) {
+            console.error('[statusCache] sweep error:', e.message);
+        }
+    }, 60 * 60 * 1000);
+}
 // Per-chat AI auto-reply: answers EVERY message, unlike .chatbot which needs a
 // mention. Kept separate so turning on one cannot silently enable the other.
 const { handleAutoReply } = safeRequire('./lib/autoReply');

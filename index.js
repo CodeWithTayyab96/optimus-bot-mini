@@ -54,6 +54,9 @@ const scheduler = require('./lib/productivity/scheduler')
 const potSupervisor = require('./lib/potSupervisor')
 // Download-source health monitor (alerts the owner when a source dies)
 const dlHealth = require('./lib/dlHealth')
+// Outbound notification governor — keeps progress/completion chatter from
+// turning the account into a spam signal. See lib/notify.js.
+const notify = require('./lib/notify')
 
 // Initialize store
 store.readFromFile()
@@ -228,6 +231,12 @@ async function startXeonBotInc() {
 
         // Save credentials when they update
         XeonBotInc.ev.on('creds.update', saveCreds)
+
+        // Governor ON before any handler can send: it classifies every outbound
+        // payload, coalesces progress lines, drops redundant completion notices
+        // and batches overflow into one digest. Media, errors and menus always
+        // pass through untouched.
+        notify.wrap(XeonBotInc)
 
     store.bind(XeonBotInc.ev)
 

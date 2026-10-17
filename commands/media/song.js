@@ -3,8 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const style = require('../../lib/messageStyle');
 const { downloadYouTubeAudio, toMp3Buffer } = require('../../lib/ytAudio');
+const notify = require('../../lib/notify');
 
 async function songCommand(sock, chatId, message, query) {
+    // Declared out here so every exit path (including the catch) can stop the
+    // typing indicator; a leaked interval would keep the chat "composing" forever.
+    let stopTyping = () => { };
     try {
         const text = (query || '').trim();
         if (!text) {
@@ -25,11 +29,11 @@ async function songCommand(sock, chatId, message, query) {
             video = search.videos[0];
         }
 
-        // Inform user
-        await sock.sendMessage(chatId, {
-            image: { url: video.thumbnail },
-            caption: `🎵 Downloading: *${video.title || 'Your song'}*\n⏱️ Duration: ${video.timestamp || 'Unknown'}`
-        }, { quoted: message });
+        // The old "🎵 Downloading: …" thumbnail bubble is gone: the audio that
+        // follows is the outcome, and a typing indicator covers the wait without
+        // adding a message. One send per command instead of two.
+        const stopTypingHandle = notify.startTyping(sock, chatId);
+        stopTyping = stopTypingHandle;
 
         // Download audio via the shared robust chain (yt-dlp primary + API
         // fallbacks). Trying each source until one yields a valid buffer.
@@ -41,11 +45,13 @@ async function songCommand(sock, chatId, message, query) {
             // Propagate the real cause (e.g. "yt-dlp is not installed…") instead
             // of replacing it with a generic message that hides the problem.
             console.error('[song] download failed:', e.message);
+            stopTyping();
             throw e;
         }
 
         const audioBuffer = audioData.buffer;
         if (!audioBuffer || audioBuffer.length === 0) {
+            stopTyping();
             throw new Error('Downloaded audio buffer is empty');
         }
 
@@ -53,6 +59,7 @@ async function songCommand(sock, chatId, message, query) {
         const normalized = await toMp3Buffer(audioBuffer);
 
         // Send buffer as MP3
+        stopTyping();
         await sock.sendMessage(chatId, {
             audio: normalized.buffer,
             mimetype: normalized.mimetype,
@@ -83,6 +90,7 @@ async function songCommand(sock, chatId, message, query) {
         }
 
     } catch (err) {
+        stopTyping();
         console.error('Song command error:', err);
 
         let errorMessage = 'Failed to download the song. Please try again later.';

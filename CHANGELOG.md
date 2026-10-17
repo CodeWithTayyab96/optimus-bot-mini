@@ -4,6 +4,52 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 🔇 Outbound notification governor + readable status cache
+
+**Fewer messages per command, on purpose.** WhatsApp scores a linked number on how much it pushes, and
+one `.video` was costing three sends — a "⏳ Downloading…" thumbnail, the video, and a completion line.
+None of the extra messages carried anything the user did not already have. The noise was concentrated
+in exactly the commands people run repeatedly, which is the pattern that looks automated.
+
+- **`lib/notify.js` (new)** classifies every outbound payload before it leaves the process:
+  `essential` (media, menus, errors, usage hints — never touched), `progress`, and `completion`.
+  Progress lines coalesce (one per 20s per chat); a completion notice is dropped when a deliverable
+  already landed in that chat within 60s, because the media *is* the confirmation. Anything past the
+  per-chat budget is queued and flushed as **one** merged digest, so nothing the user was going to
+  learn is lost — it just arrives once.
+- **Never suppressed:** media, documents, reactions, edits, deletes, status posts, newsletter posts,
+  permission denials, errors, usage hints, and any notice carrying counts (`Sent 3/4`) or a failure.
+- **`progress()` / `startTyping()`** give commands the zero-message way to say "working": a typing
+  indicator, or one message that is *edited* as the job advances instead of five messages.
+- **Commands trimmed:** `.video`, `.song`, `.music` and `.savestatus` now send one deliverable instead
+  of two or three (2→1, 2→1, 2→1, 3→1). `.savestatus`' privacy reminder moved onto the media caption.
+- Config lives in `data/notify.json`; `NOTIFY_ENABLED`, `NOTIFY_MAX_PER_CHAT`, `NOTIFY_WINDOW_MS`,
+  `NOTIFY_PROGRESS_COALESCE_MS`, `NOTIFY_COMPLETION_GRACE_MS` override it per process.
+
+**The status cache now says whose status it is.** The `📸 STATUS CACHE` listing printed `entry.number`,
+and modern WhatsApp often addresses a poster by **LID** — an opaque digit string — so every row read
+like a random number. The cache records the push name, the phone number and the LID, resolves LIDs
+through the signal store, and prints `Name (+number)` with a `#N` handle:
+
+```
+ #1  Bilal Ahmed (+923007777777)
+      1 item · last 17 Oct, 12:14
+ #3  unknown contact (ID 998877…4332)
+      1 item · last 17 Oct, 12:14
+```
+
+- `.status <ref>` and `.status clear <ref>` accept **any** form the listing shows: `#N`, phone number,
+  LID, JID or contact name. Ambiguous names are reported with the candidates instead of guessed at, and
+  a reference that matches nothing now says so instead of silently deleting zero rows.
+- **Existing caches are migrated, not discarded.** Entries written by the old version are normalised on
+  read (a LID stored in `number` is demoted to `lid`) and `backfill()` resolves their name and number,
+  so an already-populated cache becomes readable.
+- **Fixed:** statuses were timestamped from `key.messageTimestamp`, which does not exist in Baileys —
+  the value lives on the message. Every entry was therefore stamped with its *arrival* time, so a
+  backlog delivered on reconnect reset the 24h retention clock.
+- Smoke tests: `scripts/smoke-notify.js` (45 checks) and `scripts/smoke-status.js` (50 checks), both
+  wired into `npm test`.
+
 ### 🔀 Provider routing — Gemini for speech, OpenAI for auto-reply (v2.4.0)
 
 **Chat is now Groq → OpenAI-compatible.** Gemini was removed from the chat chain because the model it

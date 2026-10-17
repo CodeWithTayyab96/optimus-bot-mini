@@ -78,6 +78,8 @@ const checks = [
     ['anime UI smoke', NODE, ['scripts/smoke-anime.js']],
     ['textmaker UI smoke', NODE, ['scripts/smoke-textmaker.js']],
     ['cache smoke', NODE, ['scripts/smoke-cache.js']],
+    ['notify governor smoke', NODE, ['scripts/smoke-notify.js']],
+    ['status cache identity smoke', NODE, ['scripts/smoke-status.js']],
     ['model availability smoke', NODE, ['scripts/smoke-models.js']],
     ['AI config smoke', NODE, ['scripts/smoke-ai-config.js']],
     ['Shadow→Optimus port smoke', NODE, ['scripts/smoke-shadow-ports.js']],

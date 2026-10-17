@@ -210,6 +210,10 @@ async function startBot() {
     sock.ev.on('creds.update', saveCreds);
     store.bind(sock.ev);
 
+    // Same outbound governor as the full edition: fewer messages per command,
+    // which matters even more on a small host sharing one WhatsApp number.
+    require('./lib/notify').wrap(sock);
+
     // Compatibility helper used by some libs; no dependency cost.
     sock.decodeJid = (jid) => {
         if (!jid) return jid;
