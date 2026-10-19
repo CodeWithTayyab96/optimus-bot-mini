@@ -74,9 +74,9 @@ function makeSocket(id = 'sock') {
     };
 }
 
-const close = (statusCode, message = 'Stream Errored (ack)') => ({
+const close = (statusCode, message = 'Stream Errored (ack)', data) => ({
     connection: 'close',
-    lastDisconnect: { error: Object.assign(new Error(message), { output: { statusCode } }) },
+    lastDisconnect: { error: Object.assign(new Error(message), { output: data ? { statusCode, data } : { statusCode } }) },
 });
 
 (async () => {
@@ -113,8 +113,8 @@ const close = (statusCode, message = 'Stream Errored (ack)') => ({
         check('status code is surfaced', info.statusCode === 500, JSON.stringify(info));
         check('message is surfaced', info.message === 'Stream Errored (ack)', info.message);
         check('reason is human readable', /bad session/i.test(info.reason), info.reason);
-        check('only the four documented fields are returned',
-            JSON.stringify(Object.keys(info).sort()) === JSON.stringify(['action', 'message', 'reason', 'statusCode']),
+        check('the documented fields (+ stream detail) are returned',
+            JSON.stringify(Object.keys(info).sort()) === JSON.stringify(['action', 'message', 'reason', 'statusCode', 'stream']),
             JSON.stringify(Object.keys(info)));
 
         // A crafted error carrying creds must not survive into the description.
@@ -323,6 +323,66 @@ const close = (statusCode, message = 'Stream Errored (ack)') => ({
         check('open fires once with an attempt number', events.length === 1 && events[0][0] === 'open', JSON.stringify(events));
         await sup.handle(s, close(500));
         check('close carries the status code', events[1] && events[1][1] === 500, JSON.stringify(events));
+    }
+
+    // ------------------------------------------------------ stream-error detail ---
+    // `Stream Errored (ack)` is a SERVER-initiated close: WhatsApp sent a
+    // <stream:error><ack/></stream:error> and Baileys attached that node to
+    // error.output.data. We must surface the structural labels (the child tag, its
+    // `class` and `type`) so a live run can distinguish a transient 515 restart
+    // from a 500 bad-session, WITHOUT ever exposing message ids or JIDs.
+    console.log('\n=== stream-error acknowledgment diagnostics ===');
+    {
+        // A bare <stream:error><ack class="status" type="retry" id="3EB.AB"/></stream:error>
+        // — the exact shape the user's hypothesis points at. id/from MUST NOT leak.
+        const bare = connection.describeDisconnect(
+            close(500, 'Stream Errored (ack)', { tag: 'ack', attrs: { class: 'status', type: 'retry', id: '3EB.AB', from: '120363@s.whatsapp.net' } })
+        );
+        check('diagnostic is present for a bare ack close', bare.stream != null, JSON.stringify(bare.stream));
+        check('stream.code reflects the status code (500)', bare.stream.code === 500, JSON.stringify(bare.stream));
+        check('stream.reasonTag is the child tag "ack"', bare.stream.reasonTag === 'ack');
+        check('stream.reasonClass captures "status"', bare.stream.reasonClass === 'status');
+        check('stream.reasonType captures "retry"', bare.stream.reasonType === 'retry');
+        check('no message id is surfaced', !/3EB\.AB/i.test(JSON.stringify(bare.stream)), JSON.stringify(bare.stream));
+        check('no jid is surfaced', !/s\.whatsapp\.net/i.test(JSON.stringify(bare.stream)), JSON.stringify(bare.stream));
+
+        // Server explicitly sends code=515 (restart required) — must not look like a 500.
+        const restart = connection.describeDisconnect(
+            close(515, 'Stream Errored (ack)', { tag: 'ack', attrs: { class: 'status', type: 'retry' } })
+        );
+        check('code=515 is reported as 515, not 500', restart.stream.code === 515, JSON.stringify(restart.stream));
+        check('code=515 still classifies as reconnect', restart.action === 'reconnect');
+
+        // A genuinely missing code (null) must stay null, never become 0.
+        const noCode = connection.describeDisconnect(
+            close(null, 'Stream Errored (ack)', { tag: 'ack', attrs: { class: 'status' } })
+        );
+        check('a missing code stays null, not 0', noCode.stream.code === null, JSON.stringify(noCode.stream));
+
+        // Baileys fallback: data is the outer <stream:error> with a child reason.
+        const outer = connection.describeDisconnect(
+            close(null, 'Stream Errored (ack)', { tag: 'stream:error', attrs: {}, content: [{ tag: 'ack', attrs: { class: 'status' } }] })
+        );
+        check('outer-node fallback still resolves the child reason', outer.stream.reasonTag === 'ack' && outer.stream.reasonClass === 'status', JSON.stringify(outer.stream));
+
+        // Error path: no node attached at all — the code is still reported, but
+        // there is nothing to classify for class/type.
+        const none = connection.describeDisconnect(close(500));
+        check('no attached node yields a diagnostic with null reason labels',
+            none.stream && none.stream.reasonTag === null && none.stream.reasonClass === null && none.stream.reasonType === null,
+            JSON.stringify(none.stream));
+
+        // Error path: malformed / non-object error.
+        const bad = connection.describeDisconnect({ lastDisconnect: { error: 'exploded' } });
+        check('malformed error yields a null diagnostic', bad.stream === null, JSON.stringify(bad.stream));
+
+        // The formatted one-liner is what gets logged on the next live close.
+        const line = connection.formatStreamDiagnostic(bare.stream);
+        check('formatted diagnostic is a redaction-safe string', typeof line === 'string' && line.includes('class=status') && !/3EB\.AB/i.test(line), line);
+
+        // Sanity: the 500-with-status-class still maps to reconnect (NOT a session
+        // wipe). We must not delete creds just because the reason is "ack".
+        check('ack/status/500 never triggers reauth (no session wipe)', bare.action === 'reconnect', bare.action);
     }
 
     // ---------------------------------------------------------- entry wiring ---

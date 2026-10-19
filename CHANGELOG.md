@@ -41,11 +41,46 @@ That combination is self-sustaining:
 clearing the previous timer, so one reminder fired once per connection. `scheduleTimer()` now clears
 the existing timer first, and `init()` is idempotent.
 
-Tests: `scripts/smoke-reconnect.js` (71 checks) — classification for every disconnect code, single
+Tests: `scripts/smoke-reconnect.js` (87 checks) — classification for every disconnect code, single
 retry under duplicate closes, stale-socket rejection, adopt-ends-previous, backoff shape and cap,
 budget reset vs exhaustion, shutdown cancelling a pending retry, connect-throw routing, credential
 redaction, and the entry-point wiring (creds.update before adopt, no inline reconnect). Plus a Jest
 case for the duplicate reminder timer.
+
+### 🔍 Reconnect deep-dive — `Stream Errored (ack)` root-cause check
+
+A second pass traced the failure to the library source rather than the message text, and tested the
+hypothesis that an **unhandled incoming `ack`/`class="status"` stanza** was causing it.
+
+Findings (Baileys `7.0.0-rc13`, installed):
+
+- `Stream Errored (ack)` is produced **only** by the server-side `CB:stream:error` handler. The `reason`
+  is the child tag of `<stream:error>`; `getErrorCodeFromStreamError()` maps `ack`+no-`code` → **500
+  `badSession`**. It is a server-initiated close, not a locally thrown error.
+- Incoming node dispatch (`socket.js`) emits each frame and, if **no handler matches, silently drops
+  the node** (debug log only). An unhandled `ack`/`class="status"` stanza therefore **cannot** raise a
+  stream error in this version — the hypothesised mechanism does not exist in the installed code.
+- The only `ack` handler is `CB:ack,class:message` (`handleBadAck`, for server acks of *our* outgoing
+  messages). `buildAckStanza` is the client→server ack. A missing `ack class="status"` handler is
+  benign, and acking an ack would be a protocol violation — so no handler was added.
+
+**Conclusion:** the literal cause is the server's stream-error reason tag `ack`; the underlying reason
+(bad session vs transient restart vs ack-sequence mismatch) **cannot be decided from code alone** and
+needs a live trace. The fix therefore extends — rather than assumes — the diagnostics:
+
+- `describeDisconnect()` now also returns `stream`, built by a new `diagnoseStreamError()` that reads the
+  `<stream:error>` node Baileys attaches to `error.output.data` and surfaces the **structural labels
+  only** — `code`, the child `reason` tag, and its `class`/`type`. Anything that could identify a
+  message or account (`id`, `from`, `to`, `participant`, key material) is never read, so this cannot
+  leak a session.
+- On the next live close the supervisor logs `STREAM-ERROR detail — code=500 · reason=ack · class=status
+  · type=retry`, so the true cause becomes observable instead of guessed.
+- Per the brief: no `node_modules` patch, no speculative `ack` handler, and **no session deletion on a
+  bare 500** — a 500 still maps to `reconnect`, not `reauth`. Evidence of corruption (e.g. a persistent
+  500 after the retry budget is exhausted) is required before re-pairing is recommended.
+
+Tests added: `ack`/`status`/`type` capture, `code=515` vs bare-500 distinction, null-code guard, outer-
+node fallback, missing/malformed node, and redaction of message ids/JIDs — all in `smoke-reconnect.js`.
 
 ### 🖥️ Terminal design system — every message rebuilt
 
