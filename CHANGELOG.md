@@ -4,6 +4,38 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 🔕 Download-source alerts no longer flap
+
+The background monitor alerted on every single probe flip. That is correct for a source that dies and
+stays dead, and useless for one that flickers — and YouTube's *"Sign in to confirm you're not a bot"*
+is exactly that: it depends on whether YouTube trusts this host's IP **at that moment**, so the same
+probe alternates pass/fail on a datacenter box. The owner got DOWN, RECOVERED an hour later, DOWN the
+next hour, indefinitely.
+
+**A state change now has to be both sustained and worth saying:**
+
+- **`FAIL_THRESHOLD` (3, ≈1h)** consecutive failures before DOWN is reported.
+- **`RECOVER_THRESHOLD` (3)** consecutive successes before RECOVERED — one lucky check between failures
+  can no longer fake a recovery.
+- **RECOVERED is only sent for an outage that was actually announced.** "Recovered" for something the
+  owner was never told was down is just as confusing as the outage.
+- **Repeats muted 6h** (`ALERT_COOLDOWN_MS`) and **capped at 3/day** per source, so a slowly flapping
+  source cannot fill the chat either.
+- **One message per run**, however many sources changed — including the mixed case (one dies, one
+  recovers), which now uses a `🔁 DOWNLOAD SOURCE CHANGED` title.
+- The alert body names the streak (`3 checks in a row failed`) and, for the bot-check specifically,
+  says it is the host's IP being challenged rather than a fault in this repo.
+
+**`.dlstatus monitor on|off`** is the switch for an owner who wants silence: off stops the probe timer
+as well (no point spending bandwidth on eight network probes every 20 minutes if nothing is reported).
+Turning it back on clears the "already told them" record, so a source that died while alerts were off
+is reported instead of staying silently broken.
+
+The old state file (`{ "probe": true }`) is migrated in place; a legacy `false` is treated as already
+reported, so upgrading does not re-announce an outage the owner has seen. Thresholds are overridable
+with `DL_HEALTH_FAIL_THRESHOLD`, `DL_HEALTH_RECOVER_THRESHOLD`, `DL_HEALTH_ALERT_COOLDOWN_MS` and
+`DL_HEALTH_MAX_ALERTS_PER_DAY`. Smoke test: `scripts/smoke-dlhealth.js`, 35 checks.
+
 ### 🔇 Outbound notification governor + readable status cache
 
 **Fewer messages per command, on purpose.** WhatsApp scores a linked number on how much it pushes, and

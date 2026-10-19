@@ -38,12 +38,57 @@ module.exports = {
     adminOnly: false,
     botAdminNeeded: false,
     async execute(sock, message, args, extra) {
+        // ── .dlstatus monitor [on|off] ──────────────────────────────────
+        // The background monitor is debounced, but "quieter" is not "silent".
+        // This is the switch for an owner who wants no alerts at all.
+        const sub = (args[0] || '').trim().toLowerCase();
+        if (sub === 'monitor' || sub === 'alerts') {
+            const mode = (args[1] || '').trim().toLowerCase();
+            const st = dlHealth.status();
+
+            if (!mode) {
+                return extra.reply(style.box('🔔 DOWNLOAD ALERTS', [
+                    `Background alerts are *${st.alerts ? 'ON' : 'OFF'}*.`,
+                    `Monitor running: ${st.running ? 'yes' : 'no'} · every ${Math.round(st.intervalMs / 60000)} min`,
+                    '',
+                    `A source must fail ${st.thresholds.fail} checks in a row before it is`,
+                    `reported, and again pass ${st.thresholds.recover} in a row before it counts`,
+                    'as recovered. Repeats are muted for 6h, max 3/day.',
+                    '',
+                    `Turn off: ${extra.prefix}dlstatus monitor off`,
+                    `Turn on:  ${extra.prefix}dlstatus monitor on`,
+                ]));
+            }
+            if (mode !== 'on' && mode !== 'off') {
+                return extra.reply(style.invalidInput(
+                    'Use on or off.', `${extra.prefix}dlstatus monitor off`, { box: false }
+                ));
+            }
+            dlHealth.setAlerts(mode === 'on');
+            if (mode === 'on') dlHealth.init(sock);
+            return extra.reply(style.success(
+                mode === 'on'
+                    ? 'Download alerts are ON. Only sustained failures are reported.'
+                    : 'Download alerts are OFF and the monitor is stopped. .dlstatus still works on demand.'
+            ));
+        }
+
         await sock.sendMessage(extra.chatId, { react: { text: '🩺', key: message.key } });
 
         const results = await dlHealth.runProbes();
         const alive = results.filter(r => r.ok).length;
         const lines = results.map(r => `${r.ok ? '✅' : '❌'} ${r.name} — ${r.detail}`);
         lines.push('', `Sources alive: ${alive}/${results.length}`);
+
+        // Say what the background monitor will do with these results, so an
+        // owner who has not seen an alert knows whether that is by design.
+        const mon = dlHealth.status();
+        lines.push(
+            mon.alerts
+                ? `🔔 Alerts: ON · needs ${mon.thresholds.fail} consecutive failures · repeats muted ${Math.round(mon.thresholds.cooldownMs / 3600000)}h`
+                : `🔕 Alerts: OFF — nothing is sent. Re-enable with ${extra.prefix}dlstatus monitor on`
+        );
+
         // Shown FIRST: the operator needs to confirm the panel is running the
         // pushed code before trusting any of the probes below.
         lines.unshift(`🤖 Optimus Bot v${settings.version} · commit ${settings.gitCommit || 'unknown'}`);
