@@ -69,6 +69,7 @@ const bootGuard = runtime.installBootGuard();
 // Socket lifecycle + the single reconnect loop, shared with the full edition.
 // `startBot` is a hoisted declaration, so this can sit above its definition.
 const { createSupervisor } = require('./lib/connection');
+const { registerStatusAck } = require('./lib/statusAck');
 const supervisor = createSupervisor({
     connect: () => startBot(),
     log: (line) => console.log(chalk.gray(line)),
@@ -237,6 +238,10 @@ async function startBot() {
     // Register this socket as THE socket; a previous one is ended here so two
     // can never be live at once on the same credentials.
     supervisor.adopt(sock);
+
+    // Ack incoming top-level <status> stanzas (Baileys #2858). Without this the
+    // server closes the stream ~50 min later with "Stream Errored (ack)".
+    registerStatusAck(sock);
 
     // Same outbound governor as the full edition: fewer messages per command,
     // which matters even more on a small host sharing one WhatsApp number.

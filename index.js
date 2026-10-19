@@ -59,6 +59,7 @@ const dlHealth = require('./lib/dlHealth')
 const notify = require('./lib/notify')
 // Socket lifecycle + the single reconnect loop. See lib/connection.js.
 const { createSupervisor } = require('./lib/connection')
+const { registerStatusAck } = require('./lib/statusAck')
 
 // Initialize store
 store.readFromFile()
@@ -369,6 +370,10 @@ async function startXeonBotInc() {
         // sockets on one credential pair is what produces a 440 conflict loop
         // and double message handling.
         supervisor.adopt(XeonBotInc)
+
+        // Ack incoming top-level <status> stanzas (Baileys #2858). Without this
+        // the server closes the stream ~50 min later with "Stream Errored (ack)".
+        registerStatusAck(XeonBotInc)
 
         // Governor ON before any handler can send: it classifies every outbound
         // payload, coalesces progress lines, drops redundant completion notices

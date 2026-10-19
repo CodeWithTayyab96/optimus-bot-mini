@@ -84,6 +84,7 @@ const checks = [
     ['outbound style + pacing smoke', NODE, ['scripts/smoke-outbound.js']],
     ['terminal message design smoke', NODE, ['scripts/smoke-terminal.js']],
     ['connection/reconnect smoke', NODE, ['scripts/smoke-reconnect.js']],
+    ['status-stanza ack (#2858) smoke', NODE, ['scripts/smoke-status-ack.js']],
     ['model availability smoke', NODE, ['scripts/smoke-models.js']],
     ['AI config smoke', NODE, ['scripts/smoke-ai-config.js']],
     ['Shadow→Optimus port smoke', NODE, ['scripts/smoke-shadow-ports.js']],
