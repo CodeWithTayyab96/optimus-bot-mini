@@ -77,19 +77,17 @@ async function studyCommand(sock, chatId, message, args, extra) {
 
         if (!docMsg) {
             return await sock.sendMessage(chatId, {
-                text: style.box('📄 AI STUDY', [
-                    'Reply to a document with:',
-                    `• ${extra.prefix}study — Get a full summary`,
-                    `• ${extra.prefix}study <question> — Ask about the document`,
+                text: style.card('AI_STUDY.SYS', [
+                    style.quote('Reply to a document with:'),
                     '',
-                    'Supported formats:',
-                    '📕 PDF files',
-                    '📘 Word documents (.docx)',
-                    '📝 Text files (.txt, .csv, .json)',
-                    '💻 Code files (.js, .py, .java, etc.)',
+                    ...style.fields([
+                        [`${extra.prefix}study`, 'Get a full summary'],
+                        [`${extra.prefix}study <question>`, 'Ask about the document'],
+                    ]),
                     '',
-                    'Example:',
-                    'Reply to a PDF → .study what are the key points?'
+                    style.tag('info', 'SUPPORTED FORMATS: PDF · DOCX · TXT · CSV · JSON · CODE'),
+                    '',
+                    style.quote(`Example: reply to a PDF with ${extra.prefix}study what are the key points?`),
                 ]),
                 ...channelInfo
             }, { quoted: message });

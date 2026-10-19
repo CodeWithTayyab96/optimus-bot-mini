@@ -115,7 +115,7 @@ function hasText(sent, substr) {
         JSON.stringify(sent.map(s => s.content?.text)));
 
     // 3) processing helper still compact
-    check('style.processing compact', style.processing('Fetching your audio...') === '⏳ Fetching your audio...', style.processing('Fetching your audio...'));
+    check('style.processing compact', style.processing('Fetching your audio...') === '[PROCESS] Fetching your audio...', style.processing('Fetching your audio...'));
 
     // 4) Media payload keys intact in source
     const src = {};

@@ -57,15 +57,15 @@ module.exports = {
                 if (i < groups.length - 1) await sleep(SEND_DELAY_MS);
             }
 
-            await extra.reply(style.box('📢 BROADCAST', [
-                ...style.rows([
+            await extra.reply(style.card('BROADCAST.SYS', [
+                ...style.fields([
                     ['Groups', String(groups.length)],
-                    ['Delivered', `✅ ${success}`],
-                    ['Failed', failed ? `❌ ${failed}` : '0'],
+                    ['Delivered', String(success)],
+                    ['Failed', failed ? String(failed) : 'NONE'],
                 ]),
-                ...(failures.length ? ['', `First failure: ${failures[0]}`] : []),
+                ...(failures.length ? ['', style.tag('warning', `FIRST FAILURE: ${failures[0]}`)] : []),
                 '',
-                `Paced at ${(SEND_DELAY_MS / 1000).toFixed(1)}s per group.`,
+                style.tag('info', `PACED AT ${(SEND_DELAY_MS / 1000).toFixed(1)}S PER GROUP`),
             ]));
         } catch (error) {
             console.error('Broadcast command error:', error);

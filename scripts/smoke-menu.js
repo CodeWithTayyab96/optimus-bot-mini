@@ -13,25 +13,26 @@ function check(label, ok, extra = '') {
 }
 
 // ---------------- style builders ----------------
-check('success compact', style.success('Done') === '✅ Done');
-check('error compact', style.error('Oops') === '❌ Oops');
-check('warning compact', style.warning('Careful') === '⚠️ Careful');
-check('info compact', style.info('Heads up') === 'ℹ️ Heads up');
-check('processing', style.processing('Downloading') === '⏳ Downloading...');
+check('success compact', style.success('Done') === '[SUCCESS] Done');
+check('error compact', style.error('Oops') === '[ERROR] Oops');
+check('warning compact', style.warning('Careful') === '[WARNING] Careful');
+check('info compact', style.info('Heads up') === '[INFO] Heads up');
+check('processing', style.processing('Downloading') === '[PROCESS] Downloading');
 check('completed aliases success', style.completed('Done') === style.success('Done'));
 
 const errBox = style.error('Bad input', { box: true, usage: '.x <y>' });
-check('error boxed has bold title', errBox.startsWith('*❌ ERROR*'));
-check('error boxed has colour band', errBox.includes('🟥'));
-check('error boxed has usage', errBox.includes('Usage:') && errBox.includes('.x <y>'));
-check('error boxed has no heavy border', !errBox.includes('╭') && !errBox.includes('╰') && !errBox.includes('┃'));
+check('error boxed has a module heading', errBox.startsWith('OPTIMUS / ERROR.SYS'));
+check('error boxed has a rule under the heading', /^━+$/m.test(errBox));
+check('error boxed tags the failure', errBox.includes('[ERROR] Bad input'));
+check('error boxed carries the usage verbatim', errBox.includes('Usage:') && errBox.includes('.x <y>'));
+check('error boxed has no box-drawing border', !errBox.includes('╭') && !errBox.includes('╰') && !errBox.includes('┃'));
 
-check('permission owner', style.permissionDenied('owner', { box: false }) === '👑 Only the bot owner can use this command.');
-check('permission ownerOrSudo boxed', style.permissionDenied('ownerOrSudo').includes('*🔒 ACCESS DENIED*'));
-check('permission admin', style.permissionDenied('admin', { box: false }) === '🛡️ Only group admins can use this command.');
+check('permission owner', style.permissionDenied('owner', { box: false }) === '[ERROR] ACCESS DENIED Only the bot owner can use this command.');
+check('permission ownerOrSudo boxed', style.permissionDenied('ownerOrSudo').includes('OPTIMUS / ACCESS.SYS'));
+check('permission admin', style.permissionDenied('admin', { box: false }) === '[ERROR] ACCESS DENIED Only group admins can use this command.');
 check('permission group', style.permissionDenied('group', { box: false }).includes('groups'));
 check('permission botAdmin', style.permissionDenied('botAdmin', { box: false }).includes('admin'));
-check('notFound', style.notFound('User', { box: false }) === '❌ User not found.');
+check('notFound', style.notFound('User', { box: false }) === '[ERROR] NOT FOUND User not found.');
 check('invalidInput with usage', style.invalidInput('Nope.', '.x <y>').includes('Usage:'));
 
 // ---------------- splitting ----------------
@@ -54,24 +55,30 @@ const ownerMenu = help.buildMenuText({ isOwnerOrSudo: true, isAdmin: true });
 const userMenu = help.buildMenuText({ isOwnerOrSudo: false, isAdmin: false });
 const adminMenu = help.buildMenuText({ isOwnerOrSudo: false, isAdmin: true });
 
-check('owner menu contains all commands', [...uniqueNames].every(n => new RegExp('✦\\s+' + n + '(\\s|$)').test(ownerMenu)));
-check('owner menu has every category present in registry', [...new Set([...commands.values()].map(c => c.category))].every(c => ownerMenu.includes(help.categoryLabel(c) + '*')));
+// A command is indexed as `[NN] <name> :: <prefix><name>` — see help.buildBlocks.
+const indexEntry = (n) => new RegExp('\\[\\d{2}\\]\\s+' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+::');
+
+check('owner menu contains all commands', [...uniqueNames].every(n => indexEntry(n).test(ownerMenu)));
+check('owner menu has every category present in registry',
+    [...new Set([...commands.values()].map(c => c.category))]
+        .every(c => ownerMenu.includes(help.categoryLabel(c).replace(/[^A-Z0-9]+/gi, '_').toUpperCase())));
 
 const ownerOnly = [...uniqueNames].filter(n => commands.get(n).ownerOnly);
 const adminOnly = [...uniqueNames].filter(n => commands.get(n).adminOnly);
-check('normal user menu hides owner-only commands', ownerOnly.every(n => !new RegExp('✦\\s+' + n + '(\\s|$)').test(userMenu)));
-check('admin menu hides owner-only commands too', ownerOnly.every(n => !new RegExp('✦\\s+' + n + '(\\s|$)').test(adminMenu)));
-check('admin menu shows admin-only commands', adminOnly.every(n => new RegExp('✦\\s+' + n + '(\\s|$)').test(adminMenu)));
-check('normal user menu hides admin-only commands', adminOnly.every(n => !new RegExp('✦\\s+' + n + '(\\s|$)').test(userMenu)));
+check('normal user menu hides owner-only commands', ownerOnly.every(n => !indexEntry(n).test(userMenu)));
+check('admin menu hides owner-only commands too', ownerOnly.every(n => !indexEntry(n).test(adminMenu)));
+check('admin menu shows admin-only commands', adminOnly.every(n => indexEntry(n).test(adminMenu)));
+check('normal user menu hides admin-only commands', adminOnly.every(n => !indexEntry(n).test(userMenu)));
 
 // ---------------- .help <command> detail ----------------
 const detail = help.buildCommandDetail('jid', { isOwnerOrSudo: true });
-check('detail has name', detail.includes('Name     : jid'));
-check('detail has category', detail.includes('Category : Owner'));
-check('detail has description', detail.includes('Description:'));
-check('detail has usage', detail.includes('Usage:'));
-check('detail has aliases section', detail.includes('Aliases:'));
-check('detail fallback for missing description', help.buildCommandDetail('ping', { isOwnerOrSudo: true }).includes('Description:'));
+check('detail has name', detail.includes('NAME') && detail.includes('jid'));
+check('detail has category', detail.includes('CATEGORY') && detail.includes('OWNER'));
+check('detail has description', detail.includes('DESCRIPTION'));
+check('detail has usage', detail.includes('USAGE'));
+check('detail has aliases section', detail.includes('ALIASES'));
+check('detail fallback for missing description',
+    /DESCRIPTION/.test(help.buildCommandDetail('ping', { isOwnerOrSudo: true })));
 
 // hidden owner command queried by normal user → permission, not leak
 const hidden = help.buildCommandDetail('jid', { isOwnerOrSudo: false });
@@ -85,9 +92,15 @@ check('unknown command → null', help.buildCommandDetail('nonexistentxyz', { is
 const smallChunks = help.buildMenuChunks({ isOwnerOrSudo: true, isAdmin: true }, { maxLen: 600 });
 check('menu splits under small maxLen', smallChunks.length > 1);
 check('no chunk exceeds maxLen', smallChunks.every(c => c.length <= 600));
-check('blocks never split across chunks', smallChunks.every(c =>
-    c.split('\n\n').every(part => !part.includes('✦') || /^\*[^\n]+\*/.test(part))
-));
+// Each chunk holds whole OPTIMUS / MODULE.SYS cards: a heading is always
+// followed by its rule, and never orphaned at the end of a chunk.
+check('blocks never split across chunks', smallChunks.every(c => {
+    const lines = c.split('\n');
+    return lines.every((l, i) => {
+        if (!l.startsWith('OPTIMUS / ')) return true;
+        return i + 1 < lines.length && /^━{8,32}$/.test(lines[i + 1]);
+    });
+}));
 
 // ---------------- mode reflected in header ----------------
 const { readMode, setMode } = require('../lib/mode');
@@ -96,9 +109,9 @@ const modeBackup = require('fs').existsSync(modePath) ? require('fs').readFileSy
 try {
     const original = readMode();
     setMode(true);
-    check('menu shows public mode', help.buildMenuText({}).includes('Mode   : public'));
+    check('menu shows public mode', /MODE\s*=\s*public/i.test(help.buildMenuText({})));
     setMode(false);
-    check('menu shows private mode', help.buildMenuText({}).includes('Mode   : private'));
+    check('menu shows private mode', /MODE\s*=\s*private/i.test(help.buildMenuText({})));
     setMode(original);
 } finally {
     if (modeBackup !== null) require('fs').writeFileSync(modePath, modeBackup);

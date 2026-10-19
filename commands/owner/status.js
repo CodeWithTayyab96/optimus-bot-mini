@@ -52,6 +52,16 @@ const { resolveDmJid } = require('../../lib/dmTarget');
 /** Contacts shown per listing page. Two lines each keeps the card readable. */
 const MAX_ROWS = 8;
 
+/**
+ * Record blocks are separated by a blank line, so trailing blanks must go —
+ * but the ones BETWEEN records must stay. This drops only the tail.
+ */
+function trimEnd(lines) {
+    const out = [...lines];
+    while (out.length && out[out.length - 1] === '') out.pop();
+    return out;
+}
+
 function fmtWhen(ts) {
     try {
         return new Date(ts * 1000).toLocaleString('en-GB', {
@@ -69,12 +79,14 @@ function fmtBytes(n) {
     return `${(n / 1048576).toFixed(1)} MB`;
 }
 
-/** One contact as two listing lines: the identity, then the counts. */
-function contactLines(contact, index) {
-    return [
-        ` #${String(index).padStart(2, ' ')}  ${contact.label}`,
-        `       ${contact.count} item${contact.count === 1 ? '' : 's'} · last ${fmtWhen(contact.ts)}`,
-    ];
+/** One contact as a record block: id line, then its fields. */
+function contactBlock(contact, index) {
+    const fields = [];
+    if (contact.name) fields.push(['Name', contact.name]);
+    fields.push(['Number', contact.number ? `+${contact.number}` : contact.label]);
+    fields.push(['Items', String(contact.count)]);
+    fields.push(['Last event', fmtWhen(contact.ts)]);
+    return style.record(`CONTACT_ENTRY_${String(index).padStart(2, '0')}`, fields, { gap: true });
 }
 
 module.exports = {
@@ -140,15 +152,16 @@ module.exports = {
             const mode = (args[1] || '').trim().toLowerCase();
             if (!mode) {
                 const on = statusCache.isEnabled();
-                return say(style.box('📸 STATUS CAPTURE', [
-                    `Auto-save is *${on ? 'ON' : 'OFF'}*.`,
+                return say(style.card('STATUS_CAPTURE.SYS', [
+                    ...style.entries([
+                        ['Auto-save', style.state(on)],
+                        ['Retention', '24H'],
+                    ]),
                     '',
-                    on
-                        ? 'Incoming statuses are being kept (24h, then auto-deleted).'
-                        : 'Nothing is being saved — .status <number> has nothing to serve.',
-                    '',
-                    `Turn it on:  ${extra.prefix}status save on`,
-                    `Turn it off: ${extra.prefix}status save off`,
+                    style.tag('info', on
+                        ? 'INCOMING STATUSES ARE BEING KEPT, THEN AUTO-DELETED'
+                        : 'NOTHING IS BEING SAVED — .status <NUMBER> HAS NOTHING TO SERVE'),
+                    style.tag('info', `TOGGLE: ${extra.prefix}status save on  ·  ${extra.prefix}status save off`),
                 ]));
             }
             if (mode !== 'on' && mode !== 'off') {
@@ -170,14 +183,19 @@ module.exports = {
             const list = statusCache.getAllowlist();
 
             if (!arg) {
-                return say(style.box('📸 STATUS ALLOWLIST', [
-                    list.length
-                        ? list.map((n) => ` ${n}`).join('\n')
-                        : 'No allowlist set — every contact is eligible (while auto-save is on).',
+                return say(style.card('STATUS_ALLOWLIST.SYS', [
+                    ...style.entries([
+                        ['Mode', list.length ? 'ALLOWLIST' : 'ALL CONTACTS'],
+                        ['Entries', String(list.length)],
+                    ]),
                     '',
-                    `Add:    ${extra.prefix}status allow <number>`,
-                    `Remove: ${extra.prefix}status deny <number>`,
-                    `Clear:  ${extra.prefix}status allow clear`,
+                    ...(list.length
+                        ? list.map((n) => style.quote(`+${n}`))
+                        : [style.quote('No allowlist set — every contact is eligible while auto-save is on.')]),
+                    '',
+                    style.tag('info', `ADD:    ${extra.prefix}status allow <number>`),
+                    style.tag('info', `REMOVE: ${extra.prefix}status deny <number>`),
+                    style.tag('info', `CLEAR:  ${extra.prefix}status allow clear`),
                 ]));
             }
             if (arg === 'clear') {
@@ -223,47 +241,50 @@ module.exports = {
             const contacts = statusCache.listContacts();
             const st = statusCache.stats();
 
-            const state = style.rows([
-                ['Auto-save', `*${enabled ? 'ON' : 'OFF'}*`],
-                ['Retention', '24h'],
-                ['Allowlist', allow.length ? `${allow.length} number(s)` : 'all contacts'],
+            const state = style.entries([
+                ['Auto-save', enabled ? 'ENABLED' : 'DISABLED'],
+                ['Retention', '24H'],
+                ['Allowlist', allow.length ? `${allow.length} NUMBER(S)` : 'GLOBAL'],
             ]);
 
             if (!enabled && !contacts.length) {
-                return say(style.box('📸 STATUS CACHE', [
-                    'Auto-save is *OFF* — nothing is being recorded.',
+                return say(style.card('STATUS_CACHE.SYS', [
+                    style.tag('warning', 'AUTO-SAVE IS DISABLED — NOTHING IS BEING RECORDED.'),
                     '',
-                    `Turn it on: ${extra.prefix}status save on`,
-                    'Then ask someone to post a new status and check again.',
+                    style.quote(`Turn it on:  ${extra.prefix}status save on`),
+                    style.quote('Then ask someone to post a new status and check again.'),
                 ]));
             }
 
             if (!contacts.length) {
-                return say(style.box('📸 STATUS CACHE', [
+                return say(style.card('STATUS_CACHE.SYS', [
                     ...state,
                     '',
-                    'Nothing cached yet — no status has arrived since auto-save was on.',
-                    'Statuses are recorded LIVE, as they arrive. The bot cannot go back',
-                    'and fetch one that was already posted, and they expire after 24h.',
+                    style.tag('info', 'CACHE EMPTY'),
                     '',
-                    'Ask someone to post a new status, then check again.',
+                    style.quote('Statuses are recorded LIVE, as they arrive. The bot cannot'),
+                    style.quote('go back and fetch one that was already posted, and they'),
+                    style.quote('expire after 24H.'),
+                    '',
+                    style.quote('Ask someone to post a new status, then check again.'),
                 ]));
             }
 
             const shown = contacts.slice(0, MAX_ROWS);
-            const rows = shown.flatMap((c, i) => contactLines(c, i + 1));
+            const rows = shown.flatMap((c, i) => contactBlock(c, i + 1));
 
-            return say(style.box('📸 STATUS CACHE', [
+            return say(style.card('STATUS_CACHE.SYS', trimEnd([
                 ...state,
                 '',
                 ...rows,
-                contacts.length > MAX_ROWS ? ` …and ${contacts.length - MAX_ROWS} more` : '',
+                contacts.length > MAX_ROWS
+                    ? style.tag('info', `+${contacts.length - MAX_ROWS} MORE CONTACT(S) NOT SHOWN`)
+                    : '',
                 '',
-                `${st.contacts} contact(s) · ${st.entries} item(s) · ${fmtBytes(st.bytes)}`,
-                '',
-                `Get one: ${extra.prefix}status #1   or   ${extra.prefix}status <number>`,
-                `Wipe:    ${extra.prefix}status clear #1`,
-            ].filter((l) => l !== '')));
+                style.tag('system', `${st.contacts} CONTACT(S) · ${st.entries} ITEM(S) · ${fmtBytes(st.bytes)}`),
+                style.tag('info', `FETCH: ${extra.prefix}status #1  OR  ${extra.prefix}status <NUMBER>`),
+                style.tag('info', `WIPE:  ${extra.prefix}status clear #1`),
+            ])));
         }
 
         // ── .status <ref> ───────────────────────────────────────────────
@@ -276,13 +297,12 @@ module.exports = {
             const enabled = statusCache.isEnabled();
             if (resolved.reason === 'ambiguous') {
                 const rows = (resolved.matches || []).slice(0, MAX_ROWS)
-                    .flatMap((c, i) => contactLines(c, i + 1));
-                return say(style.box('📸 STATUS', [
-                    `"${ref}" matches more than one cached contact:`,
+                    .flatMap((c, i) => contactBlock(c, i + 1));
+                return say(style.card('STATUS_CACHE.SYS', [
+                    style.tag('warning', `"${ref}" MATCHES MORE THAN ONE CACHED CONTACT`),
                     '',
                     ...rows,
-                    '',
-                    `Pick one: ${extra.prefix}status #1`,
+                    style.tag('info', `PICK ONE: ${extra.prefix}status #1`),
                 ]));
             }
 
@@ -290,37 +310,33 @@ module.exports = {
             // than explaining how statuses are captured.
             if (/^#\d+$/.test(ref)) {
                 const total = statusCache.listContacts().length;
-                return say(style.box('📸 STATUS', [
-                    total
-                        ? `There is no ${ref} — ${total} contact(s) are cached, so the handles are #1–#${total}.`
-                        : 'The cache is empty — nothing to show.',
+                return say(style.card('STATUS_CACHE.SYS', [
+                    style.tag('warning', total
+                        ? `NO SUCH HANDLE ${ref} — ${total} CONTACT(S) CACHED (HANDLES #1–#${total})`
+                        : 'CACHE IS EMPTY — NOTHING TO SHOW'),
                     '',
-                    `See who IS cached: ${extra.prefix}status`,
+                    style.tag('info', `SEE WHO IS CACHED: ${extra.prefix}status`),
                 ]));
             }
 
-            return say(style.box('📸 STATUS', [
-                `Nothing cached for ${ref}.`,
-                ...(enabled ? [] : [
-                    '',
-                    `Auto-save is *OFF* — turn it on with ${extra.prefix}status save on`,
-                ]),
+            return say(style.card('STATUS_CACHE.SYS', [
+                style.tag('warning', `NOTHING CACHED FOR ${ref.toUpperCase()}`),
+                ...(enabled ? [] : [style.tag('warning', `AUTO-SAVE IS DISABLED — ${extra.prefix}status save on`)]),
                 '',
-                'Statuses are recorded LIVE, as they arrive. The bot cannot go back',
-                'and fetch one that was already posted — so a status from before the',
-                'bot last started, or older than 24h, will never appear here.',
+                style.quote('Statuses are recorded LIVE. The bot cannot go back and fetch'),
+                style.quote('one that was already posted, or one older than 24H.'),
                 '',
-                'Ask them to post a new status, then run this again.',
-                '',
-                `See who IS cached: ${extra.prefix}status`,
-            ]));        }
+                style.quote(`Ask them to post a new status, then run ${extra.prefix}status ${ref} again.`),
+                style.tag('info', `SEE WHO IS CACHED: ${extra.prefix}status`),
+            ]));
+        }
 
         const contact = resolved.contact;
         const entries = statusCache.listFor(ref);
         if (!entries.length) {
-            return say(style.box('📸 STATUS', [
-                `Nothing cached for ${contact.label}.`,
-                `See who IS cached: ${extra.prefix}status`,
+            return say(style.card('STATUS_CACHE.SYS', [
+                style.tag('warning', `NOTHING CACHED FOR ${String(contact.label).toUpperCase()}`),
+                style.tag('info', `SEE WHO IS CACHED: ${extra.prefix}status`),
             ]));
         }
 
@@ -329,7 +345,7 @@ module.exports = {
             try {
                 if (e.type === 'text') {
                     await sock.sendMessage(dmJid, {
-                        text: `📝 Status from ${contact.label}:\n${e.caption || ''}`,
+                        text: `${style.tag('system', `STATUS FROM ${contact.label.toUpperCase()}`)}\n${e.caption || ''}`,
                     });
                     sent++;
                     continue;
@@ -339,7 +355,7 @@ module.exports = {
                 if (!file) continue;
 
                 const buffer = fs.readFileSync(file);
-                const payload = { caption: e.caption || `📸 Status from ${contact.label}` };
+                const payload = { caption: e.caption || `${style.tag('system', `STATUS FROM ${contact.label.toUpperCase()}`)}` };
                 if (e.type === 'image') payload.image = buffer;
                 else if (e.type === 'video') payload.video = buffer;
                 else payload.audio = buffer;
@@ -364,31 +380,31 @@ module.exports = {
 function clearFailure(raw, resolved, prefix) {
     if (resolved.reason === 'ambiguous') {
         const rows = (resolved.matches || []).slice(0, MAX_ROWS)
-            .flatMap((c, i) => contactLines(c, i + 1));
-        return style.box('📸 STATUS', [
-            `"${raw}" matches more than one cached contact:`,
+            .flatMap((c, i) => contactBlock(c, i + 1));
+        return style.card('STATUS_CACHE.SYS', [
+            style.tag('warning', `"${raw}" MATCHES MORE THAN ONE CACHED CONTACT`),
             '',
             ...rows,
-            '',
-            `Pick one: ${prefix}status clear #1`,
+            style.tag('info', `PICK ONE: ${prefix}status clear #1`),
         ]);
     }
     const contacts = statusCache.listContacts();
     if (/^#\d+$/.test(String(raw))) {
-        return style.box('📸 STATUS', [
-            contacts.length
-                ? `There is no ${raw} — ${contacts.length} contact(s) are cached. Nothing was deleted.`
-                : 'The cache is empty — nothing was deleted.',
+        return style.card('STATUS_CACHE.SYS', [
+            style.tag('warning', contacts.length
+                ? `NO SUCH HANDLE ${raw} — ${contacts.length} CONTACT(S) CACHED`
+                : 'CACHE IS EMPTY'),
             '',
-            `See who IS cached: ${prefix}status`,
+            style.tag('info', 'NOTHING WAS DELETED'),
+            style.tag('info', `SEE WHO IS CACHED: ${prefix}status`),
         ]);
     }
-    return style.box('📸 STATUS', [
-        `Nothing cached for ${raw} — nothing was deleted.`,
-        contacts.length
-            ? `Cached: ${contacts.slice(0, 3).map((c) => c.label).join(', ')}${contacts.length > 3 ? `, +${contacts.length - 3} more` : ''}`
-            : 'The cache is empty.',
+    return style.card('STATUS_CACHE.SYS', [
+        style.tag('warning', `NOTHING CACHED FOR ${String(raw).toUpperCase()} — NOTHING WAS DELETED`),
+        style.tag('info', contacts.length
+            ? `CACHED: ${contacts.slice(0, 3).map((c) => c.label).join('  ·  ')}${contacts.length > 3 ? `  ·  +${contacts.length - 3} MORE` : ''}`
+            : 'CACHE IS EMPTY'),
         '',
-        `Wipe everything: ${prefix}status clear`,
+        style.tag('info', `WIPE EVERYTHING: ${prefix}status clear`),
     ]);
 }

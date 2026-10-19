@@ -67,10 +67,10 @@ function hasText(sent, substr) {
         ['summarize', { message: {} }, [], 'Reply to any message with .summarize'],
         ['imagine', { message: { conversation: '.imagine' } }, [], 'INVALID INPUT'],
         ['magicstudio', { message: {} }, [], 'INVALID INPUT'],
-        ['gptimage', { message: {} }, [], '🎨 AI IMAGE'],
+        ['gptimage', { message: {} }, [], 'OPTIMUS / AI_IMAGE.SYS'],
         ['stt', { message: {} }, [], 'INVALID INPUT'],
         ['voicesummary', { message: {} }, [], 'Reply to a voice note or audio with .voicesummary'],
-        ['study', { message: {} }, [], '📄 AI STUDY'],
+        ['study', { message: {} }, [], 'OPTIMUS / AI_STUDY.SYS'],
     ];
     for (const [cmdName, msg, args, substr] of usageCases) {
         const sent = await runWith(cmdName, msg, args);
@@ -91,7 +91,10 @@ function hasText(sent, substr) {
     // 3) Processing helper where work genuinely takes time
     check('study: style.processing used', src.study.includes("style.processing('Scanning document...')"));
     check('imagine: style.processing used', src.imagine.includes("style.processing('Creating your image...')"));
-    check('processing output compact', style.processing('Creating your image...') === '⏳ Creating your image...');
+    // A trailing ellipsis is stripped: the "[PROCESS]" tag already says the
+    // operation is ongoing, so "Downloading..." would double it up.
+    check('processing output compact', style.processing('Creating your image...') === '[PROCESS] Creating your image');
+    check('processing keeps a single ellipsis-free line', !style.processing('Working on it...').includes('...'));
 
     // 4) Payloads + quoted replies + channelInfo preserved
     const payloadChecks = [

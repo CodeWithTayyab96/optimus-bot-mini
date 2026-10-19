@@ -160,11 +160,11 @@ async function capture(sock, msg) {
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, [], extra);
     let out = lastText();
-    check('listing is boxed as STATUS CACHE', out.includes('STATUS CACHE'), out.slice(0, 80));
+    check('listing uses the terminal STATUS_CACHE module', out.includes('OPTIMUS / STATUS_CACHE.SYS'), out.slice(0, 80));
     check('listing shows the contact name', out.includes('Ali Khan'), out.slice(0, 300));
     check('listing shows the phone number', out.includes(ALI_PN), out.slice(0, 300));
-    check('listing offers #N handles', out.includes('#1'), out.slice(0, 300));
-    check('listing explains how to fetch one', out.includes('.status #1'), out.slice(0, 400));
+    check('listing offers #1 as a fetch handle', /FETCH: \.status #1/.test(out), out.slice(0, 400));
+    check('listing explains how to fetch one', out.includes('.status #1') && out.includes('clear #1'), out.slice(0, 400));
     check('listing does not show a bare LID as a phone number', !out.includes(`+${ALI_LID}`), out.slice(0, 400));
 
     // .status #1 → sends that contact's statuses to the DM
@@ -172,13 +172,13 @@ async function capture(sock, msg) {
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, ['#1'], extra);
     const body = cmdSock.sent.map((s) => s.content?.text || '').join('\n');
-    check('.status #1 sends the newest contact\'s statuses', body.includes(`📝 Status from ${newest.label}`), body.slice(0, 200));
+    check('.status #1 sends the newest contact\'s statuses', body.includes(`[SYSTEM] STATUS FROM ${newest.label.toUpperCase()}`), body.slice(0, 200));
     check('.status #1 reports a count', new RegExp(`Sent ${newest.count}/${newest.count} status`).test(body), body.slice(-120));
 
     // .status <number> still works, exactly as before
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, [SARA_PN], extra);
-    check('.status <number> still works', /📝 Status from Sara B/.test(cmdSock.sent.map((s) => s.content?.text || '').join('\n')));
+    check('.status <number> still works', /\[SYSTEM\] STATUS FROM SARA B/.test(cmdSock.sent.map((s) => s.content?.text || '').join('\n')));
 
     // .status <name> works too
     cmdSock.sent.length = 0;
@@ -188,7 +188,7 @@ async function capture(sock, msg) {
     // unknown reference explains itself instead of failing silently
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, ['nobody'], extra);
-    check('.status <unknown> explains what is cached', /Nothing cached for nobody/.test(lastText()), lastText().slice(0, 200));
+    check('.status <unknown> explains what is cached', /NOTHING CACHED FOR NOBODY/.test(lastText()), lastText().slice(0, 200));
 
     // ------------------------------------------------------------ ambiguity ---
     console.log('\n=== ambiguous names ===');
@@ -196,7 +196,7 @@ async function capture(sock, msg) {
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, ['Ali'], extra);
     out = lastText();
-    check('ambiguous name lists the matches', /matches more than one/.test(out), out.slice(0, 200));
+    check('ambiguous name lists the matches', /MATCHES MORE THAN ONE/.test(out), out.slice(0, 200));
     check('ambiguous listing shows both candidates', out.includes('Ali Khan') && out.includes('Ali Raza'), out.slice(0, 300));
     check('ambiguous reference deletes nothing', statusCache.listFor('Ali Khan').length === 2);
 
@@ -214,7 +214,7 @@ async function capture(sock, msg) {
 
     cmdSock.sent.length = 0;
     await statusCmd.execute(cmdSock, msg, ['clear', 'does-not-exist'], extra);
-    check('clear with an unknown ref deletes nothing and says so', /Nothing cached for does-not-exist/.test(lastText()), lastText().slice(0, 200));
+    check('clear with an unknown ref deletes nothing and says so', /NOTHING CACHED FOR DOES-NOT-EXIST/.test(lastText()), lastText().slice(0, 200));
     check('cache still intact after the failed clear', statusCache.listContacts().length === beforeClear.length - 1, `${statusCache.listContacts().length}`);
 
     cmdSock.sent.length = 0;

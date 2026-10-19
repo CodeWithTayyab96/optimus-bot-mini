@@ -1,17 +1,19 @@
 const settings = require("../../settings");
+const style = require('../../lib/messageStyle');
 const { channelInfo } = require('../../lib/messageConfig');
 async function aliveCommand(sock, chatId, message) {
     try {
-        const message1 = `*🤖 ${settings.botName || 'Optimus Bot'} is Active!*\n\n` +
-                       `*Version:* ${settings.version}\n` +
-                       `*Status:* Online\n` +
-                       `*Mode:* Public\n\n` +
-                       `*🌟 Features:*\n` +
-                       `• Group Management\n` +
-                       `• Antilink Protection\n` +
-                       `• Fun Commands\n` +
-                       `• And more!\n\n` +
-                       `Type *.menu* for full command list`;
+        const message1 = style.card('STATUS.SYS', [
+            ...style.entries([
+                ['Bot', settings.botName || 'Optimus Bot'],
+                ['Version', settings.version || '—'],
+                ['Status', 'ONLINE'],
+            ]),
+            '',
+            style.tag('system', 'ALL SYSTEMS NOMINAL'),
+            '',
+            style.quote(`Type ${'.menu'} for the full command index`),
+        ]);
 
         await sock.sendMessage(chatId, {
             text: message1,

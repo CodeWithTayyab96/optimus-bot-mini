@@ -82,6 +82,7 @@ const checks = [
     ['status cache identity smoke', NODE, ['scripts/smoke-status.js']],
     ['download alert debounce smoke', NODE, ['scripts/smoke-dlhealth.js']],
     ['outbound style + pacing smoke', NODE, ['scripts/smoke-outbound.js']],
+    ['terminal message design smoke', NODE, ['scripts/smoke-terminal.js']],
     ['model availability smoke', NODE, ['scripts/smoke-models.js']],
     ['AI config smoke', NODE, ['scripts/smoke-ai-config.js']],
     ['Shadow→Optimus port smoke', NODE, ['scripts/smoke-shadow-ports.js']],

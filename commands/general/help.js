@@ -166,8 +166,20 @@ function collectCommands(viewer = {}) {
     return byCat;
 }
 
-/** One atomic block per category — banner style: *📦 GENERAL* / ━━━ / ✦ name. */
-function buildBlocks(viewer = {}) {
+/**
+ * One atomic block per category, as a terminal index:
+ *
+ *     OPTIMUS / GENERAL.SYS
+ *     ━━━━━━━━━━━━━━━━━━
+ *     > AVAILABLE COMMANDS
+ *
+ *     [01] alive          :: Check bot status
+ *     [02] ping           :: Check response time
+ *
+ * The value column is the command's own description, not a repeat of its name —
+ * `alive :: .alive` tells the reader nothing they did not already know.
+ */
+function buildBlocks(viewer = {}, opts = {}) {
     const byCat = collectCommands(viewer);
     const cats = [...byCat.keys()].sort((a, b) => {
         const ia = CATEGORY_ORDER.indexOf(a);
@@ -175,9 +187,21 @@ function buildBlocks(viewer = {}) {
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
     });
     return cats.map(cat => {
-        const names = byCat.get(cat).map(c => c.name).sort();
-        return style.box(`${CATEGORY_ICONS[cat] || '📁'} ${categoryLabel(cat)}`, names.map(n => `✦ ${n}`), CATEGORY_ACCENTS[cat] || '🟦');
+        const list = [...byCat.get(cat)].sort((a, b) => a.name.localeCompare(b.name));
+        const width = Math.max(4, ...list.map((c) => c.name.length));
+        const lines = [style.quote('AVAILABLE COMMANDS'), ''];
+        list.forEach((cmd, i) => {
+            lines.push(`[${String(i + 1).padStart(2, '0')}] ${cmd.name.padEnd(width, ' ')} :: ${shortDescription(cmd)}`);
+        });
+        return style.card(`${categoryLabel(cat)}`, lines);
     });
+}
+
+/** The one-line description used in the index, kept inside the width budget. */
+function shortDescription(cmd, max = 42) {
+    const text = String(cmd.description || '').trim().replace(/\s+/g, ' ');
+    if (!text) return '—';
+    return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
 /**
@@ -194,11 +218,10 @@ function buildMenuChunks(viewer = {}, opts = {}) {
         prefix,
         mode
     });
-    const footer = style.box(
-        `📢 ${settings.botName || 'Optimus Bot'}`,
-        [settings.channelLink || 'Join our channel for updates']
-    );
-    return style.splitBlocks([header, ...buildBlocks(viewer), footer], opts.maxLen || 3000);
+    const footer = style.card('CHANNEL.SYS', [
+        style.quote(settings.channelLink || 'Join our channel for updates'),
+    ]);
+    return style.splitBlocks([header, ...buildBlocks(viewer, opts), footer], opts.maxLen || 3000);
 }
 
 /** Full menu as one string (all chunks joined) — used by tests/coverage. */
@@ -225,15 +248,19 @@ function buildCategoryIndex(viewer = {}, opts = {}) {
     const cats = [...byCat.keys()].sort(compareCategories);
     const total = visibleCommandCount(viewer);
 
-    const lines = [`${total} commands available to you.`, 'Pick a category:', ''];
-    for (const cat of cats) {
+    const lines = [
+        style.tag('system', `${total} COMMAND(S) AVAILABLE TO YOU`),
+        style.quote('PICK A CATEGORY:'),
+        '',
+    ];
+    const width = Math.max(...cats.map((c) => categoryLabel(c).length));
+    cats.forEach((cat, i) => {
         const count = byCat.get(cat).length;
-        lines.push(`${CATEGORY_ICONS[cat] || '📁'} ${categoryTitle(cat)}  (${count})`);
-        lines.push(`    ${prefix}${categoryCommand(cat)}`);
-    }
+        lines.push(`[${String(i + 1).padStart(2, '0')}] ${categoryLabel(cat).padEnd(width, ' ')} :: ${String(count).padStart(2, ' ')} CMD · ${prefix}${categoryCommand(cat)}`);
+    });
     lines.push('');
-    lines.push(`${prefix}help <command>  → details for one command`);
-    return style.box('📚 COMMAND CATEGORIES', lines);
+    lines.push(style.tag('info', `${prefix}help <command>  :: DETAILS FOR ONE COMMAND`));
+    return style.card('COMMAND_INDEX.SYS', lines);
 }
 
 /**
@@ -243,17 +270,22 @@ function buildCategoryIndex(viewer = {}, opts = {}) {
 function buildCategoryChunks(cat, viewer = {}, opts = {}) {
     const prefix = String(opts.prefix || settings.prefix || '.').replace(/\\$/, '');
     const byCat = collectCommands(viewer);
-    const list = byCat.get(cat);
-    if (!list || !list.length) return null;
+    const raw = byCat.get(cat);
+    if (!raw || !raw.length) return null;
 
-    const names = list.map(c => c.name).sort();
+    const list = [...raw].sort((a, b) => a.name.localeCompare(b.name));
+    const width = Math.max(4, ...list.map((c) => c.name.length));
     const header = style.menuHeader({
         user: viewer.userName || '',
         prefix,
         mode: readMode() ? 'public' : 'private'
     });
-    const block = style.box(`${CATEGORY_ICONS[cat] || '📁'} ${categoryLabel(cat)}`, names.map(n => `✦ ${n}`), CATEGORY_ACCENTS[cat] || '🟦');
-    const footer = `ℹ️ ${names.length} command(s) · ${prefix}help <command> for details · ${prefix}menu for all categories`;
+    const lines = [style.quote('AVAILABLE COMMANDS'), ''];
+    list.forEach((cmd, i) => {
+        lines.push(`[${String(i + 1).padStart(2, '0')}] ${cmd.name.padEnd(width, ' ')} :: ${shortDescription(cmd)}`);
+    });
+    const block = style.card(categoryLabel(cat), lines);
+    const footer = style.tag('system', `${list.length} COMMAND(S) · ${prefix}help <command> FOR DETAILS · ${prefix}menu FOR ALL CATEGORIES`);
     return style.splitBlocks([header, block, footer], opts.maxLen || 3000);
 }
 
@@ -269,19 +301,21 @@ function buildCommandDetail(query, viewer = {}) {
 
     const prefix = settings.prefix || '.';
     const lines = [
-        `Name     : ${cmd.name}`,
-        `Category : ${categoryTitle(cmd.category || 'misc')}`,
+        style.quote('COMMAND RECORD'),
         '',
-        'Description:',
-        ` ${cmd.description || 'No description provided.'}`,
+        ...style.fields([
+            ['Name', cmd.name],
+            ['Category', categoryTitle(cmd.category || 'misc').toUpperCase()],
+            ['Aliases', (cmd.aliases && cmd.aliases.length) ? cmd.aliases.join('  ·  ') : '—'],
+        ]),
         '',
-        'Usage:',
-        ` ${cmd.usage || `${prefix}${cmd.name}`}`,
+        style.tag('info', 'DESCRIPTION'),
+        style.quote(cmd.description || 'No description provided.'),
         '',
-        'Aliases:',
-        ` ${(cmd.aliases && cmd.aliases.length) ? cmd.aliases.map(a => `• ${a}`).join(' ') : '—'}`
+        style.tag('info', 'USAGE'),
+        style.quote(cmd.usage || `${prefix}${cmd.name}`),
     ];
-    return style.box('🔎 COMMAND INFO', lines);
+    return style.card('COMMAND_INFO.SYS', lines);
 }
 
 function viewerFromExtra(extra = {}) {

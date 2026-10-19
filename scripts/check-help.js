@@ -1,6 +1,8 @@
 // Cross-checks the dynamic menu generated from the command registry:
-//   1. Every registered command name appears as a menu entry (✦ name)
-//      for a viewer who can see everything (owner/sudo).
+//   1. Every registered command name appears as a menu entry
+//      (`[NN] <name> :: <prefix><name>`) for a viewer who can see everything
+//      (owner/sudo). The terminal index is the documented format — see
+//      lib/messageStyle.js.
 //   2. .help <command> resolves for every command from its own metadata.
 //   3. Permission filtering hides owner-only commands from normal users.
 //   4. No menu chunk exceeds the safe size and blocks are never split.
@@ -19,7 +21,7 @@ for (const [, cmd] of commands) {
     if (seen.has(cmd.name)) continue;
     seen.add(cmd.name);
     total++;
-    if (!new RegExp('✦\\s+' + cmd.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)').test(ownerMenu)) {
+    if (!new RegExp('\\[\\d{2}\\]\\s+' + cmd.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+::').test(ownerMenu)) {
         missing.push(`${cmd.category}/${cmd.name}`);
     }
 }

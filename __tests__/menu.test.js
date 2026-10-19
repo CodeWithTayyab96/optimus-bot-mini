@@ -77,9 +77,18 @@ jest.mock('../lib/commandLoader', () => {
 });
 
 const help = require('../commands/general/help');
+const style = require('../lib/messageStyle');
 
 const OWNER_VIEWER = { isOwnerOrSudo: true, isAdmin: true, userName: '@owner' };
 const GUEST_VIEWER = { isOwnerOrSudo: false, isAdmin: false, userName: '@guest' };
+
+/**
+ * The module name the formatter derives from a category label.
+ *
+ * Delegates to messageStyle so the test cannot drift from the formatter's
+ * naming rules — if those change, both move together.
+ */
+const moduleOf = (label) => style.moduleName(label);
 
 const EXPECTED_CATEGORIES = [
     'GENERAL',
@@ -109,13 +118,13 @@ describe('Menu categorization', () => {
 
     for (const cat of EXPECTED_CATEGORIES) {
         test(`contains category header "${cat}"`, () => {
-            expect(menuText).toContain(` ${cat}*`);
+            expect(menuText).toContain(`OPTIMUS / ${moduleOf(cat)}`);
         });
     }
 
     test('does NOT contain an "MISC" or "UNKNOWN" category', () => {
-        expect(menuText).not.toContain(' MISC*');
-        expect(menuText).not.toContain(' UNKNOWN*');
+        expect(menuText).not.toContain(`OPTIMUS / ${moduleOf('MISC')}`);
+        expect(menuText).not.toContain(`OPTIMUS / ${moduleOf('UNKNOWN')}`);
     });
 });
 
@@ -128,14 +137,19 @@ describe('Command placement', () => {
         menuText = help.buildMenuText(OWNER_VIEWER);
     });
 
+    /**
+     * Slice one category's index card out of the full menu.
+     *
+     * The card now starts at `OPTIMUS / <CATEGORY>.SYS` (see lib/messageStyle)
+     * and ends at the next card, so the block is everything from this heading
+     * up to the following `OPTIMUS / ` heading.
+     */
     function getCategoryBlock(cat) {
-        const startMarker = ` ${cat}*`;
-        const startIdx = menuText.indexOf(startMarker);
+        const heading = `OPTIMUS / ${cat.replace(/[^A-Z0-9]+/gi, '_').toUpperCase()}.SYS`;
+        const startIdx = menuText.indexOf(heading);
         if (startIdx === -1) return '';
-        const blockStart = menuText.lastIndexOf('\n*', startIdx) + 1;
-        let blockEnd = menuText.indexOf('\n\n', startIdx);
-        if (blockEnd === -1) blockEnd = menuText.length;
-        return menuText.substring(blockStart, blockEnd);
+        const next = menuText.indexOf('OPTIMUS / ', startIdx + heading.length);
+        return menuText.substring(startIdx, next === -1 ? menuText.length : next);
     }
 
     const CATEGORY_COMMANDS = {
@@ -154,7 +168,7 @@ describe('Command placement', () => {
         for (const cmd of commands) {
             test(`${cmd} appears under ${cat}`, () => {
                 const block = getCategoryBlock(cat);
-                expect(block).toContain(`✦ ${cmd}`);
+                expect(block).toContain(`] ${cmd} `);
             });
         }
     }
@@ -170,14 +184,13 @@ describe('Alphabetical sorting', () => {
     });
 
     function getCommandsInCategory(cat) {
-        const marker = ` ${cat}*`;
-        const startIdx = menuText.indexOf(marker);
+        const heading = `OPTIMUS / ${cat.replace(/[^A-Z0-9]+/gi, '_').toUpperCase()}.SYS`;
+        const startIdx = menuText.indexOf(heading);
         if (startIdx === -1) return [];
-        let endIdx = menuText.indexOf('\n\n', startIdx);
-        if (endIdx === -1) endIdx = menuText.length;
-        const block = menuText.substring(startIdx, endIdx);
+        const next = menuText.indexOf('OPTIMUS / ', startIdx + heading.length);
+        const block = menuText.substring(startIdx, next === -1 ? menuText.length : next);
         const commands = [];
-        const regex = /✦ (\S+)/g;
+        const regex = /\[\d{2}\] (\S+) ::/g;
         let m;
         while ((m = regex.exec(block)) !== null) commands.push(m[1]);
         return commands;
@@ -207,7 +220,7 @@ describe('Alphabetical sorting', () => {
 describe('Alias deduplication', () => {
     test('no command name appears more than once in the full menu', () => {
         const menuText = help.buildMenuText(OWNER_VIEWER);
-        const regex = /✦ (\S+)/g;
+        const regex = /\[\d{2}\] (\S+) ::/g;
         const seen = new Set();
         const dupes = [];
         let m;
@@ -228,12 +241,12 @@ describe('Branding', () => {
         menuText = help.buildMenuText(OWNER_VIEWER);
     });
 
-    test('header shows OPTIMUS BOT', () => {
-        expect(menuText).toContain('OPTIMUS BOT');
+    test('header shows the OPTIMUS system name', () => {
+        expect(menuText).toContain('OPTIMUS / SYSTEM.SYS');
     });
 
-    test('header shows Welcome', () => {
-        expect(menuText).toContain('Welcome');
+    test('header shows the viewer handle', () => {
+        expect(menuText).toContain('USER');
     });
 
     test('footer shows channel link', () => {
@@ -241,11 +254,11 @@ describe('Branding', () => {
     });
 
     test('shows mode', () => {
-        expect(menuText).toContain('Mode');
+        expect(menuText).toContain('MODE');
     });
 
     test('shows prefix', () => {
-        expect(menuText).toContain('Prefix');
+        expect(menuText).toContain('PREFIX');
     });
 });
 
@@ -254,14 +267,14 @@ describe('Branding', () => {
 describe('Visibility', () => {
     test('guest viewer does not see owner-only commands', () => {
         const guestText = help.buildMenuText(GUEST_VIEWER);
-        expect(guestText).not.toContain('✦ aistatus');
-        expect(guestText).not.toContain('✦ sudo');
+        expect(guestText).not.toContain('] aistatus ');
+        expect(guestText).not.toContain('] sudo ');
     });
 
     test('owner viewer sees all commands', () => {
         const ownerText = help.buildMenuText(OWNER_VIEWER);
-        expect(ownerText).toContain('✦ aistatus');
-        expect(ownerText).toContain('✦ sudo');
+        expect(ownerText).toContain('] aistatus ');
+        expect(ownerText).toContain('] sudo ');
     });
 
     test('visibleCommandCount for owner > visibleCommandCount for guest', () => {
@@ -288,10 +301,10 @@ describe('No secrets in menu output', () => {
 describe('Command detail card', () => {
     test('.help help shows detail card', () => {
         const detail = help.buildCommandDetail('help', OWNER_VIEWER);
-        expect(detail).toContain('COMMAND INFO');
+        expect(detail).toContain('OPTIMUS / COMMAND_INFO.SYS');
         expect(detail).toContain('help');
         // categoryTitle() converts "general" → "General"
-        expect(detail).toContain('General');
+        expect(detail).toContain('GENERAL');
     });
 
     test('.help nonexistent shows null', () => {
@@ -330,7 +343,7 @@ describe('Category index (.menu)', () => {
     test('index shows a per-category command count', () => {
         const index = help.buildCategoryIndex(OWNER_VIEWER, { prefix: '.' });
         // AI has 4 commands in the mocked set (gpt, gptimage, imagine, stt)
-        expect(index).toMatch(/Ai\s+\(4\)/);
+        expect(index).toMatch(/Ai\s+:: 4 CMD/);
     });
 
     test('index is far shorter than the full menu dump', () => {
@@ -350,9 +363,9 @@ describe('Per-category menu (.ai / .fun / …)', () => {
         const chunks = help.buildCategoryChunks('ai', OWNER_VIEWER, { prefix: '.' });
         expect(Array.isArray(chunks)).toBe(true);
         const text = chunks.join('\n');
-        expect(text).toContain('✦ gpt');
-        expect(text).toContain('✦ imagine');
-        expect(text).not.toContain('✦ joke');
+        expect(text).toContain('] gpt ');
+        expect(text).toContain('] imagine ');
+        expect(text).not.toContain('] joke ');
     });
 
     test('unknown category returns null', () => {

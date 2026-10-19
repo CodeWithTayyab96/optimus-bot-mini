@@ -4,6 +4,60 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 🖥️ Terminal design system — every message rebuilt
+
+Optimus now speaks like a diagnostic console rather than a chatbot:
+
+```
+OPTIMUS / STATUS_CACHE.SYS
+━━━━━━━━━━━━━━━━
+[01] AUTO-SAVE :: ENABLED
+[02] RETENTION :: 24H
+[03] ALLOWLIST :: GLOBAL
+
+> CONTACT_ENTRY_01
+  NAME       = Bilal Ahmed
+  NUMBER     = +923007777777
+  ITEMS      = 1
+  LAST EVENT = 17 Oct, 12:14
+
+[SYSTEM] 4 CONTACT(S) · 5 ITEM(S) · 0 B
+```
+
+**One formatter, not 240 hand-written strings.** `lib/messageStyle.js` was rewritten as the design
+system: `card()/box()` (heading + rule + body), `tag()` (`[SYSTEM] [INFO] [SUCCESS] [WARNING]
+[ERROR] [PROCESS]`), `quote()` (`> detail`), `field()/fields()` (`KEY = VALUE` with a shared gutter),
+`entry()/entries()` (`[01] LABEL :: VALUE`), `record()`, `state()`, `emptyResult()`, `summary()`.
+
+Because every command already went through these helpers, the whole bot changed at once — no command
+was left behind, and none can drift back to prose.
+
+- **Module names are derived, not declared.** `box('📸 STATUS CACHE', …)` renders
+  `OPTIMUS / STATUS_CACHE.SYS`; emoji and punctuation are stripped, and a label that already ends in
+  `.SYS` passes through untouched. No call site had to change to get the new identity.
+- **The emoji colour bands are gone.** They were decorative, wide, and inconsistent with the new
+  vocabulary; the rule and the tags carry the structure instead.
+- **`[SUCCESS]` replaced `✅`.** Same meaning, and the notify classifier now reads tags directly
+  (`[PROCESS]` = progress, `[SUCCESS]` = completion), which is far more reliable than guessing from
+  wording. Untagged wording heuristics are still there as a fallback.
+- **Help is a real index**: `[01] alive :: Check if the bot is online`, grouped per category with a
+  `COMMAND_INDEX.SYS` summary. Descriptions, not repeated command names.
+- **Settings is the numbered config card** (`CONFIG.SYS`): one `[NN] LABEL :: VALUE` per switch, with
+  `ENABLED`/`DISABLED`/`UNAVAILABLE`/`UNKNOWN` instead of ON/OFF prose.
+- Restyled: status cache, `.help`/`.menu`, `.settings`, `.alive`, `.dlstatus`, `.dlstatus monitor`,
+  `.broadcast`, `.antidelete`, `.study`, `.gptimage`, the bot-online notice, download alerts and the
+  debounced notice digest.
+
+**WhatsApp-safe by construction:** no ANSI, no HTML, no images, no dependencies; structural lines are
+capped at 24 columns; `splitLong`/`splitBlocks` still chunk anything longer. Body sentences are left
+to WhatsApp's own wrapping — the width budget applies to headings, rules, gutters and index rows,
+which is what actually breaks on a phone.
+
+Tests: new `scripts/smoke-terminal.js` (66 checks) pins the contract — card shape, module naming,
+gutter alignment, empty states, long values, special characters, multiline input, chunking, and that
+no ANSI/HTML can appear. Existing design-pinning assertions were updated to the new vocabulary
+(they encoded the old look, not the behaviour).
+
 ### 🔕 Download-source alerts no longer flap
 
 The background monitor alerted on every single probe flip. That is correct for a source that dies and

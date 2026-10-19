@@ -47,16 +47,18 @@ module.exports = {
             const st = dlHealth.status();
 
             if (!mode) {
-                return extra.reply(style.box('🔔 DOWNLOAD ALERTS', [
-                    `Background alerts are *${st.alerts ? 'ON' : 'OFF'}*.`,
-                    `Monitor running: ${st.running ? 'yes' : 'no'} · every ${Math.round(st.intervalMs / 60000)} min`,
+                return extra.reply(style.card('ALERTS.SYS', [
+                    ...style.entries([
+                        ['Alerts', style.state(st.alerts)],
+                        ['Monitor', st.running ? `RUNNING (${Math.round(st.intervalMs / 60000)} MIN)` : 'STOPPED'],
+                        ['Fail rule', `${st.thresholds.fail} CONSECUTIVE FAILURES`],
+                        ['Recover', `${st.thresholds.recover} CONSECUTIVE PASSES`],
+                        ['Cooldown', `${Math.round(st.thresholds.cooldownMs / 3600000)}H`],
+                        ['Daily cap', String(st.thresholds.maxPerDay)],
+                    ]),
                     '',
-                    `A source must fail ${st.thresholds.fail} checks in a row before it is`,
-                    `reported, and again pass ${st.thresholds.recover} in a row before it counts`,
-                    'as recovered. Repeats are muted for 6h, max 3/day.',
-                    '',
-                    `Turn off: ${extra.prefix}dlstatus monitor off`,
-                    `Turn on:  ${extra.prefix}dlstatus monitor on`,
+                    style.tag('info', `DISABLE: ${extra.prefix}dlstatus monitor off`),
+                    style.tag('info', `ENABLE:  ${extra.prefix}dlstatus monitor on`),
                 ]));
             }
             if (mode !== 'on' && mode !== 'off') {
@@ -66,18 +68,16 @@ module.exports = {
             }
             dlHealth.setAlerts(mode === 'on');
             if (mode === 'on') dlHealth.init(sock);
-            return extra.reply(style.success(
-                mode === 'on'
-                    ? 'Download alerts are ON. Only sustained failures are reported.'
-                    : 'Download alerts are OFF and the monitor is stopped. .dlstatus still works on demand.'
-            ));
+            return extra.reply(style.success(mode === 'on'
+                ? 'Download alerts ENABLED. Only sustained failures are reported.'
+                : 'Download alerts DISABLED and the monitor stopped. .dlstatus still works on demand.'));
         }
 
         await sock.sendMessage(extra.chatId, { react: { text: '🩺', key: message.key } });
 
         const results = await dlHealth.runProbes();
         const alive = results.filter(r => r.ok).length;
-        const lines = results.map(r => `${r.ok ? '✅' : '❌'} ${r.name} — ${r.detail}`);
+        const lines = results.map(r => `${style.tag(r.ok ? 'success' : 'error', r.name)}\n  ${r.detail}`);
         lines.push('', `Sources alive: ${alive}/${results.length}`);
 
         // Say what the background monitor will do with these results, so an
@@ -139,6 +139,10 @@ module.exports = {
 
         lines.push('ℹ️ Dead sources fail fast; the affected command shows an honest error.');
 
-        await extra.reply(style.box('🩺 DOWNLOAD STATUS', lines));
+        await extra.reply(style.card('DOWNLOAD_STATUS.SYS', [
+            style.quote('SOURCE SCAN'),
+            '',
+            ...lines.flatMap((l) => [l, '']),
+        ].slice(0, -1)));
     },
 };

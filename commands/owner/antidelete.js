@@ -646,9 +646,12 @@ async function handleAntideleteCommand(sock, chatId, message, match) {
     const config = loadAntideleteConfig();
 
     const showStatus = () => sock.sendMessage(chatId, {
-        text: style.box('🛡️ ANTIDELETE', [
-            `Status: ${config.enabled ? '✅ Enabled' : '❌ Disabled'}`,
-            `Stored: ${messageStore.size} message(s) · retention ${STORE_TTL_MS / 3600000}h`,
+        text: style.card('ANTIDELETE.SYS', [
+            ...style.fields([
+                ['Tracking', style.state(config.enabled)],
+                ['Stored', `${messageStore.size} MESSAGE(S)`],
+                ['Retention', `${STORE_TTL_MS / 3600000}H`],
+            ]),
             '',
             'Usage:',
             ' .antidelete on — enable',

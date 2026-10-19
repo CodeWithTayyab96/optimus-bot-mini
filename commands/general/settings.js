@@ -1,4 +1,5 @@
 const fs = require('fs');
+const style = require('../../lib/messageStyle');
 
 function readJsonSafe(path, fallback) {
     try {
@@ -45,45 +46,38 @@ async function settingsCommand(sock, chatId, message) {
         const chatbotOn = groupId ? Boolean(userGroupData.chatbot && userGroupData.chatbot[groupId]) : false;
         const antitagCfg = groupId ? (userGroupData.antitag && userGroupData.antitag[groupId]) : null;
 
+        // The numbered configuration card from the design reference: one line
+        // per switch, state as ENABLED/DISABLED rather than ON/OFF prose.
+        const onOff = (v) => (v ? 'ENABLED' : 'DISABLED');
         const lines = [];
-        lines.push('*BOT SETTINGS*');
-        lines.push('');
-        lines.push(`• Mode: ${mode.isPublic ? 'Public' : 'Private'}`);
-        lines.push(`• Auto Status: ${autoStatus.enabled ? 'ON' : 'OFF'}`);
-        lines.push(`• Autoread: ${autoread.enabled ? 'ON' : 'OFF'}`);
-        lines.push(`• Autotyping: ${autotyping.enabled ? 'ON' : 'OFF'}`);
-        lines.push(`• PM Blocker: ${pmblocker.enabled ? 'ON' : 'OFF'}`);
-        lines.push(`• Anticall: ${anticall.enabled ? 'ON' : 'OFF'}`);
-        lines.push(`• Auto Reaction: ${autoReaction ? 'ON' : 'OFF'}`);
+        lines.push(...style.entries([
+            ['Mode', mode.isPublic ? 'PUBLIC' : 'PRIVATE'],
+            ['Auto status', onOff(autoStatus.enabled)],
+            ['Autoread', onOff(autoread.enabled)],
+            ['Autotyping', onOff(autotyping.enabled)],
+            ['PM blocker', onOff(pmblocker.enabled)],
+            ['Anticall', onOff(anticall.enabled)],
+            ['Auto react', onOff(autoReaction)],
+        ]));
+
         if (groupId) {
-            lines.push('');
-            lines.push(`Group: ${groupId}`);
-            if (antilinkOn) {
-                const al = userGroupData.antilink[groupId];
-                lines.push(`• Antilink: ON (action: ${al.action || 'delete'})`);
-            } else {
-                lines.push('• Antilink: OFF');
-            }
-            if (antibadwordOn) {
-                const ab = userGroupData.antibadword[groupId];
-                lines.push(`• Antibadword: ON (action: ${ab.action || 'delete'})`);
-            } else {
-                lines.push('• Antibadword: OFF');
-            }
-            lines.push(`• Welcome: ${welcomeOn ? 'ON' : 'OFF'}`);
-            lines.push(`• Goodbye: ${goodbyeOn ? 'ON' : 'OFF'}`);
-            lines.push(`• Chatbot: ${chatbotOn ? 'ON' : 'OFF'}`);
-            if (antitagCfg && antitagCfg.enabled) {
-                lines.push(`• Antitag: ON (action: ${antitagCfg.action || 'delete'})`);
-            } else {
-                lines.push('• Antitag: OFF');
-            }
+            const group = [
+                ['Antilink', antilinkOn ? `ENABLED (${userGroupData.antilink[groupId].action || 'delete'})` : 'DISABLED'],
+                ['Antibadword', antibadwordOn ? `ENABLED (${userGroupData.antibadword[groupId].action || 'delete'})` : 'DISABLED'],
+                ['Welcome', onOff(welcomeOn)],
+                ['Goodbye', onOff(goodbyeOn)],
+                ['Chatbot', onOff(chatbotOn)],
+                ['Antitag', (antitagCfg && antitagCfg.enabled) ? `ENABLED (${antitagCfg.action || 'delete'})` : 'DISABLED'],
+            ];
+            lines.push('', style.tag('system', `GROUP OVERRIDES · ${groupId}`), '');
+            lines.push(...style.entries(group));
         } else {
-            lines.push('');
-            lines.push('Note: Per-group settings will be shown when used inside a group.');
+            lines.push('', style.tag('info', 'PER-GROUP SETTINGS APPEAR WHEN USED INSIDE A GROUP'));
         }
 
-        await sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: message });
+        await sock.sendMessage(chatId, {
+            text: style.card('CONFIG.SYS', lines),
+        }, { quoted: message });
     } catch (error) {
         console.error('Error in settings command:', error);
         await sock.sendMessage(chatId, { text: 'Failed to read settings.' }, { quoted: message });

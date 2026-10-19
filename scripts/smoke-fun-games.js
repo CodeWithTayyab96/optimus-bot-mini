@@ -120,7 +120,7 @@ async function runWith(cmdName, msg, args, extra) {
         check('misc oogway: boxed usage', hasText(sent, 'INVALID INPUT') && hasText(sent, '.misc oogway <quote>'), JSON.stringify(sent.map(s => s.content?.text)));
         sent.length = 0;
         await cmds.misc.miscCommand(sock, '123@g.us', { key: { id: 'm3' } }, ['bogus']);
-        check('misc default: image-effects usage card', hasText(sent, 'IMAGE EFFECTS') && hasText(sent, 'Usage:'), JSON.stringify(sent.map(s => s.content?.text)));
+        check('misc default: image-effects usage card', hasText(sent, 'IMAGE_EFFECTS.SYS') && hasText(sent, 'Usage:'), JSON.stringify(sent.map(s => s.content?.text)));
     }
 
     // Compact warnings for simple missing-input cases
@@ -212,14 +212,14 @@ async function runWith(cmdName, msg, args, extra) {
         check('ttt: waiting message sent', hasText(sent, 'Waiting for opponent'), JSON.stringify(sent.map(s => s.content?.text)));
         sent.length = 0;
         await cmds.tictactoe.tictactoeCommand(sock, GROUP, P2, 'smokeroom');
-        const joinMsg = sent.find(s => typeof s.content?.text === 'string' && s.content.text.includes('TIC-TAC-TOE'));
+        const joinMsg = sent.find(s => typeof s.content?.text === 'string' && s.content.text.includes('TIC_TAC_TOE.SYS'));
         check('ttt: joined game uses TIC-TAC-TOE board card', !!joinMsg, JSON.stringify(sent.map(s => s.content?.text)));
         check('ttt: challenge board mentions both players', !!joinMsg && JSON.stringify(joinMsg.content.mentions).includes(P1) && JSON.stringify(joinMsg.content.mentions).includes(P2), JSON.stringify(joinMsg?.content?.mentions));
         check('ttt: board symbols preserved (❎/⭕)', !!joinMsg && joinMsg.content.text.includes('❎') && joinMsg.content.text.includes('⭕'), 'symbols changed');
 
         sent.length = 0;
         await cmds.tictactoe.handleTicTacToeMove(sock, GROUP, P1, '1');
-        check('ttt: valid move renders board', hasText(sent, 'TIC-TAC-TOE') && hasText(sent, 'Turn:'), JSON.stringify(sent.map(s => s.content?.text)));
+        check('ttt: valid move renders board', hasText(sent, 'TIC_TAC_TOE.SYS') && hasText(sent, 'Turn:'), JSON.stringify(sent.map(s => s.content?.text)));
 
         sent.length = 0;
         await cmds.tictactoe.handleTicTacToeMove(sock, GROUP, P1, '2');

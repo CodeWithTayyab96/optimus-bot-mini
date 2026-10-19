@@ -22,14 +22,12 @@ module.exports = {
             const ctxInfo = message.message?.extendedTextMessage?.contextInfo;
             if (!ctxInfo?.quotedMessage) {
                 return await extra.reply(
-                    style.box('🎨 AI IMAGE', [
-                        'Reply to an image or sticker with a prompt to edit it.',
+                    style.card('AI_IMAGE.SYS', [
+                        style.quote('Reply to an image or sticker with a prompt to edit it.'),
                         '',
-                        'Usage:',
-                        ` ${extra.prefix}gptimage <your prompt>`,
+                        `Usage: ${extra.prefix}gptimage <your prompt>`,
                         '',
-                        'Example: Reply to an image with:',
-                        ` ${extra.prefix}gptimage change the background to a beach`
+                        style.tag('info', `EXAMPLE: REPLY TO AN IMAGE WITH ${extra.prefix.toUpperCase()}GPTIMAGE CHANGE THE BACKGROUND TO A BEACH`),
                     ])
                 );
             }

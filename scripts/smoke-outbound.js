@@ -44,56 +44,54 @@ function failsafe(fn) { try { return fn(); } catch { return null; } }
 
 (async () => {
     // ------------------------------------------------------------------ design ---
+    // The full design-system contract lives in scripts/smoke-terminal.js. This
+    // smoke only checks the parts the pacing and audit work touch.
     console.log('\n=== card layout ===');
     {
-        const card = style.box('📸 STATUS CACHE', ['Auto-save : *ON*']);
+        const card = style.card('STATUS_CACHE.SYS', [style.tag('system', 'HELLO')]);
         const lines = card.split('\n');
 
-        check('title is bold', lines[0] === '*📸 STATUS CACHE*', lines[0]);
-        check('a thin rule sits under the title', lines[1] === '─'.repeat(String('📸 STATUS CACHE').length), lines[1]);
-        check('the body follows the rule', lines[2] === 'Auto-save : *ON*', lines[2]);
-        check('the colour band closes the card', /^(?:🟩|🟥|🟨|🟦|🟪){6}$/.test(lines[lines.length - 1]), lines[lines.length - 1]);
-        check('no blank line is left between title and rule', lines[1] !== '', 'blank rule');
+        check('line 1 is the module heading', lines[0] === 'OPTIMUS / STATUS_CACHE.SYS', lines[0]);
+        check('a rule sits under the heading', /^━{8,32}$/.test(lines[1]), lines[1]);
+        check('the body follows the rule', lines[2] === '[SYSTEM] HELLO', lines[2]);
+        check('no emoji band closes the card', !/🟩|🟥|🟨|🟦|🟪/.test(card), card.slice(-40));
 
         check('divider() never collapses or runs away',
-            failsafe(() => style.divider(1)) === '───' && failsafe(() => style.divider(999)) === '─'.repeat(32),
+            failsafe(() => style.divider(1)) === '━'.repeat(8) && failsafe(() => style.divider(999)) === '━'.repeat(24),
             failsafe(() => style.divider(1)));
-
-        // The band colour still follows the icon.
-        check('success cards get a green band', style.box('✅ OK', ['a']).trim().endsWith('🟩🟩🟩🟩🟩🟩'));
-        check('error cards get a red band', style.box('❌ BAD', ['a']).trim().endsWith('🟥🟥🟥🟥🟥🟥'));
     }
 
-    console.log('\n=== rows() ===');
+    console.log('\n=== fields() ===');
     {
-        const rows = style.rows([['Auto-save', '*ON*'], ['Retention', '24h'], ['Allowlist', 'all contacts']]);
+        const rows = style.fields([['Auto-save', '*ON*'], ['Retention', '24h'], ['Allowlist', 'all contacts']]);
         check('one line per pair', rows.length === 3, `${rows.length}`);
-        check('colons line up in a column',
-            rows.every((r) => r.indexOf(':') === rows[0].indexOf(':')),
+        check('the = gutter lines up',
+            new Set(rows.map((r) => r.indexOf('='))).size === 1,
             JSON.stringify(rows));
-        check('short labels are padded', rows[0].startsWith('Auto-save '), rows[0]);
+        check('labels are upper-cased', rows[0].startsWith('  AUTO-SAVE'), rows[0]);
         check('values keep their own formatting', rows[0].includes('*ON*'), rows[0]);
 
-        check('empty pairs are dropped', style.rows([['a', ''], ['', 'b'], ['c', 'd']]).length === 1);
-        check('no rows for empty input', style.rows([]).length === 0 && style.rows(null).length === 0);
+        check('empty pairs are dropped', style.fields([['a', ''], ['', 'b'], ['c', 'd']]).length === 1);
+        check('no fields for empty input', style.fields([]).length === 0 && style.fields(null).length === 0);
 
-        // Long labels must not push the gutter off the card.
-        const wide = style.rows([['A very long label indeed', 'x'], ['B', 'y']]);
-        check('a long label widens the gutter only once', wide.filter((r) => r.indexOf(':') === wide[0].indexOf(':')).length === 2, JSON.stringify(wide));
+        // A long label widens the gutter once, for every line in the block.
+        const wide = style.fields([['A very long label indeed', 'x'], ['B', 'y']]);
+        check('a long label widens the gutter once', new Set(wide.map((r) => r.indexOf('='))).size === 1, JSON.stringify(wide));
     }
 
     console.log('\n=== digest shape ===');
     {
-        // Uses the same card, so the debounced notices look like everything else.
-        const one = style.buildDigest ? null : null; // buildDigest is internal; covered in smoke-notify
-        const many = style.box('📋 UPDATES', [
-            ...style.rows([['Notices', '2 combined to keep this chat quiet']]),
+        // Same card as everything else, so a debounced notice cannot look
+        // foreign in the chat it was merged into.
+        const many = style.card('NOTICE.SYS', [
+            ...style.fields([['Notices', '2 combined to keep this chat quiet']]),
             '',
-            '• ⏳ Downloading...',
-            '• ✅ Saved.',
+            style.quote('[PROCESS] Downloading'),
+            style.quote('[SUCCESS] Saved.'),
         ]);
         check('the digest carries every line', many.includes('Downloading') && many.includes('Saved.'), many.slice(0, 120));
-        check('the digest uses the shared card', many.split('\n')[1] === '─'.repeat(13), many.split('\n')[1]);
+        check('the digest uses the shared card',
+            many.split('\n')[0] === 'OPTIMUS / NOTICE.SYS' && /^━+$/.test(many.split('\n')[1]), many.slice(0, 80));
     }
 
     // ------------------------------------------------------ antidelete pacing ---
@@ -154,8 +152,8 @@ function failsafe(fn) { try { return fn(); } catch { return null; } }
         check('sends are spaced apart', gaps.every((g) => g >= 30), JSON.stringify(gaps));
 
         const body = replies[replies.length - 1];
-        check('the result card reports the counts', /Groups\s*:\s*4/.test(body) && /Delivered\s*:\s*✅ 4/.test(body), body.slice(0, 120));
-        check('the result card says it was paced', /Paced at/.test(body), body.slice(0, 200));
+        check('the result card reports the counts', /GROUPS\s*=\s*4/.test(body) && /DELIVERED\s*=\s*4/.test(body), body.slice(0, 120));
+        check('the result card says it was paced', /PACED AT/.test(body), body.slice(0, 200));
         check('the shipped default delay is sane', delay >= 500 && delay <= 5000, `${delay}ms`);
     }
 

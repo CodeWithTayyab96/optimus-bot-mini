@@ -435,14 +435,14 @@ async function startXeonBotInc() {
                 connectionAnnounced = true;
                 const botNumber = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
                 await XeonBotInc.sendMessage(botNumber, {
-                    text: style.box('🤖 BOT ONLINE', [
-                        ...style.rows([
-                            ['Status', '*online*'],
+                    text: style.card('BOT.SYS', [
+                        ...style.fields([
+                            ['Status', 'ONLINE'],
                             ['Version', settings.version || '—'],
                             ['Since', new Date().toLocaleString()],
                         ]),
                         '',
-                        `📢 Channel: ${global.channelLink}`,
+                        style.tag('info', `CHANNEL: ${global.channelLink}`),
                     ]),
                     contextInfo: {
                         forwardingScore: 1,

@@ -517,7 +517,7 @@ function restoreHttp() { axios.get = realGet; axios.post = realPost; }
 
         sent.length = 0;
         await slotCmd.execute(mockSock, msg(G1, MEMBER, '.slot'), [], extraFor(G1, MEMBER));
-        check('.slot: responds with reels', /SLOT MACHINE/.test(lastText()));
+        check('.slot: responds with reels', /SLOT_MACHINE\.SYS/.test(lastText()));
 
         sent.length = 0;
         await diceCmd.execute(mockSock, msg(G1, MEMBER, '.dice'), [], extraFor(G1, MEMBER));
