@@ -745,6 +745,48 @@ From: @${senderName}`,
     }
 }
 
+// --------------------------------------------------------------- DM pacing ---
+// Every deleted message becomes a DM to the owner's own chat, and people delete
+// in bursts — a few spammy messages in a busy group can produce 20 DMs inside a
+// minute. That is exactly the bulk-message pattern WhatsApp treats as spam, and
+// it was pointed at the one account that must not be flagged: the owner's.
+//
+// Reports are therefore paced, not dropped: they queue and go out one at a
+// time. A 20-deletion burst turns into 20 sends over ~30s instead of 20 in
+// 20s, and nothing is lost. Media is only unlinked once its own send finishes.
+const REVOCATION_PACING_MS = Number(process.env.ANTIDELETE_PACING_MS) || 1500;
+
+const revQueue = [];
+let revTimer = null;
+
+function pumpRevocationQueue() {
+    revTimer = null;
+    const job = revQueue.shift();
+    if (!job) return;
+
+    Promise.resolve()
+        .then(job)
+        .catch((e) => console.error('antidelete report failed:', e.message))
+        .finally(() => {
+            if (revQueue.length) {
+                revTimer = setTimeout(pumpRevocationQueue, REVOCATION_PACING_MS);
+            }
+        });
+}
+
+/**
+ * Queue one revocation report. Returns immediately — the report is delivered
+ * asynchronously, `sock.sendMessage` failures are logged, never thrown, so a
+ * failed report can never break the message pipeline.
+ */
+function queueRevocation(thunk) {
+    if (typeof thunk !== 'function') return;
+    revQueue.push(thunk);
+    if (!revTimer) {
+        revTimer = setTimeout(pumpRevocationQueue, revQueue.length === 1 ? 0 : REVOCATION_PACING_MS);
+    }
+}
+
 // Handle message deletion
 async function handleMessageRevocation(sock, revocationMessage) {
     try {
@@ -783,38 +825,43 @@ async function handleMessageRevocation(sock, revocationMessage) {
             text += `\n*💬 Deleted Message:*\n${previewText}`;
         }
 
-        await sock.sendMessage(ownerNumber, {
-            text,
-            mentions: [deletedBy, sender]
-        });
+        // Everything from here is paced through the DM queue. The cleanup must
+        // live INSIDE the thunk: unlinking here would delete the media before
+        // the queued send ever reads it.
+        queueRevocation(async () => {
+            await sock.sendMessage(ownerNumber, {
+                text,
+                mentions: [deletedBy, sender]
+            });
 
-        // Media sending
-        if (original.mediaType) {
-            const hasFile = original.mediaPath && fs.existsSync(original.mediaPath);
-            if (hasFile) {
-                try {
-                    await sendStoredMedia(sock, ownerNumber, sender, senderName, deletedBy, groupName, time, original);
-                } catch (err) {
-                    console.error('Error sending deleted media:', err);
+            // Media sending
+            if (original.mediaType) {
+                const hasFile = original.mediaPath && fs.existsSync(original.mediaPath);
+                if (hasFile) {
+                    try {
+                        await sendStoredMedia(sock, ownerNumber, sender, senderName, deletedBy, groupName, time, original);
+                    } catch (err) {
+                        console.error('Error sending deleted media:', err);
+                        await sock.sendMessage(ownerNumber, {
+                            text: '⚠️ Failed to send the deleted media. The file may no longer be available.'
+                        });
+                    }
+                } else {
                     await sock.sendMessage(ownerNumber, {
-                        text: '⚠️ Failed to send the deleted media. The file may no longer be available.'
+                        text: `⚠️ Media (${original.mediaType}) could not be recovered — the file is no longer available.`
                     });
                 }
-            } else {
-                await sock.sendMessage(ownerNumber, {
-                    text: `⚠️ Media (${original.mediaType}) could not be recovered — the file is no longer available.`
-                });
-            }
 
-            // Cleanup
-            if (original.mediaPath) {
-                try {
-                    fs.unlinkSync(original.mediaPath);
-                } catch (err) {
-                    console.error('Media cleanup error:', err);
+                // Cleanup
+                if (original.mediaPath) {
+                    try {
+                        fs.unlinkSync(original.mediaPath);
+                    } catch (err) {
+                        console.error('Media cleanup error:', err);
+                    }
                 }
             }
-        }
+        });
 
         messageStore.delete(messageId);
         scheduleStoreSave();
@@ -848,5 +895,6 @@ module.exports = {
         captureMessageData, hasContent, getMessageContent,
         describeMediaNode, safeDownload,
         STORE_TTL_MS, MAX_STORE_ENTRIES,
+        queueRevocation, pumpRevocationQueue, revQueue, REVOCATION_PACING_MS,
     },
 };

@@ -1,5 +1,15 @@
 const style = require('../../lib/messageStyle');
 
+// A broadcast to N groups is the definition of a bulk send, and WhatsApp's
+// anti-spam heuristics look at exactly that: many near-identical messages to
+// many different chats in a short window. Pacing is what separates "the owner
+// asked for this" from "this number is a spam cannon".
+const SEND_DELAY_MS = Number(process.env.BROADCAST_DELAY_MS) || 1200;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 module.exports = {
     name: 'broadcast',
     aliases: ['bc'],
@@ -23,29 +33,46 @@ module.exports = {
             const chats = await sock.groupFetchAllParticipating();
             const groups = Object.values(chats);
 
+            if (!groups.length) {
+                return extra.reply(style.warning('The bot is not in any groups, so there is nothing to broadcast to.', { box: false }));
+            }
+
+            // One at a time, spaced out. A tight loop over every group is the
+            // pattern that gets a number restricted, and nothing about the
+            // content justifies the risk.
             let success = 0;
             let failed = 0;
+            const failures = [];
 
-            for (const group of groups) {
+            for (let i = 0; i < groups.length; i++) {
                 try {
-                    await sock.sendMessage(group.id, {
+                    await sock.sendMessage(groups[i].id, {
                         text: `📢 *BROADCAST MESSAGE*\n\n${broadcastText}\n\n_This is a broadcast message from the bot owner_`
                     });
                     success++;
                 } catch (e) {
                     failed++;
+                    if (failures.length < 5) failures.push(e.message);
                 }
+                if (i < groups.length - 1) await sleep(SEND_DELAY_MS);
             }
 
             await extra.reply(style.box('📢 BROADCAST', [
-                '✅ Broadcast complete',
+                ...style.rows([
+                    ['Groups', String(groups.length)],
+                    ['Delivered', `✅ ${success}`],
+                    ['Failed', failed ? `❌ ${failed}` : '0'],
+                ]),
+                ...(failures.length ? ['', `First failure: ${failures[0]}`] : []),
                 '',
-                `✅ Success: ${success}`,
-                `❌ Failed: ${failed}`
+                `Paced at ${(SEND_DELAY_MS / 1000).toFixed(1)}s per group.`,
             ]));
         } catch (error) {
             console.error('Broadcast command error:', error);
-            await extra.reply(style.error('Failed to broadcast the message.'));
+            await extra.reply(style.error('Failed to broadcast the message.', { box: false }));
         }
-    }
+    },
+
+    // Exported for tests.
+    _test: { SEND_DELAY_MS, sleep },
 };

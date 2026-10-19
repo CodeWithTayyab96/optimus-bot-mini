@@ -72,8 +72,8 @@ function fmtBytes(n) {
 /** One contact as two listing lines: the identity, then the counts. */
 function contactLines(contact, index) {
     return [
-        ` #${index}  ${contact.label}`,
-        `      ${contact.count} item${contact.count === 1 ? '' : 's'} · last ${fmtWhen(contact.ts)}`,
+        ` #${String(index).padStart(2, ' ')}  ${contact.label}`,
+        `       ${contact.count} item${contact.count === 1 ? '' : 's'} · last ${fmtWhen(contact.ts)}`,
     ];
 }
 
@@ -223,10 +223,11 @@ module.exports = {
             const contacts = statusCache.listContacts();
             const st = statusCache.stats();
 
-            const state = [
-                `Auto-save: *${enabled ? 'ON' : 'OFF'}*  ·  retention: 24h`,
-                allow.length ? `Allowlist: ${allow.length} number(s)` : 'Allowlist: all contacts',
-            ];
+            const state = style.rows([
+                ['Auto-save', `*${enabled ? 'ON' : 'OFF'}*`],
+                ['Retention', '24h'],
+                ['Allowlist', allow.length ? `${allow.length} number(s)` : 'all contacts'],
+            ]);
 
             if (!enabled && !contacts.length) {
                 return say(style.box('📸 STATUS CACHE', [

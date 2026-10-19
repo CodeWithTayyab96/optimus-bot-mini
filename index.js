@@ -19,6 +19,7 @@ const axios = require('axios')
 const { handleMessages, handleGroupParticipantUpdate, handleStatus } = require('./main');
 const PhoneNumber = require('awesome-phonenumber')
 const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./lib/exif')
+const style = require('./lib/messageStyle')
 const { describeSession, sessionSummary, needsPairing } = require('./lib/sessionInfo')
 const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetch, await, sleep, reSize } = require('./lib/myfunc')
 const {
@@ -135,6 +136,10 @@ const question = (text) => {
 // flapping connection re-prompts and re-issues codes forever, and the code you
 // are trying to type is always the one that just got replaced.
 let pairingCodeIssued = false
+
+// Same idea for the "Bot Online" notice: reconnect flaps kept re-sending it to
+// the owner's own chat. Set once the first connection opens in this process.
+let connectionAnnounced = false
 
 /**
  * Say plainly what the session on disk actually is.
@@ -419,10 +424,26 @@ async function startXeonBotInc() {
             console.log(chalk.magenta(` `))
             console.log(chalk.yellow(`🌿Connected to => ` + JSON.stringify(XeonBotInc.user, null, 2)))
 
-            try {
+            // Announce once per PROCESS, not once per connection.
+            //
+            // `connection: 'open'` fires on every successful (re)connect, so on a
+            // flapping network this rebuilt the same "Bot Connected Successfully!"
+            // bubble in the owner's own chat every few minutes — and it promised
+            // "join below channel" while the link was only in the forwarded
+            // context, so the sentence pointed at nothing.
+            if (!connectionAnnounced) {
+                connectionAnnounced = true;
                 const botNumber = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
                 await XeonBotInc.sendMessage(botNumber, {
-                    text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!\n\n✅Make sure to join below channel`,
+                    text: style.box('🤖 BOT ONLINE', [
+                        ...style.rows([
+                            ['Status', '*online*'],
+                            ['Version', settings.version || '—'],
+                            ['Since', new Date().toLocaleString()],
+                        ]),
+                        '',
+                        `📢 Channel: ${global.channelLink}`,
+                    ]),
                     contextInfo: {
                         forwardingScore: 1,
                         isForwarded: true,
@@ -432,9 +453,7 @@ async function startXeonBotInc() {
                             serverMessageId: -1
                         }
                     }
-                });
-            } catch (error) {
-                console.error('Error sending connection message:', error.message)
+                }).catch(() => {});
             }
 
             // Initialize reminder scheduler
