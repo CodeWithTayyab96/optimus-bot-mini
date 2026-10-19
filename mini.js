@@ -48,7 +48,6 @@ const miniProfile = require('./lib/miniProfile');
 const {
     default: makeWASocket,
     useMultiFileAuthState,
-    DisconnectReason,
     fetchLatestBaileysVersion,
     jidDecode,
     jidNormalizedUser,
@@ -66,6 +65,31 @@ runtime.installCrashGuards();
 const backoff = runtime.createBackoff();
 // Detects a crash loop and returns a delay to wait before starting again.
 const bootGuard = runtime.installBootGuard();
+
+// Socket lifecycle + the single reconnect loop, shared with the full edition.
+// `startBot` is a hoisted declaration, so this can sit above its definition.
+const { createSupervisor } = require('./lib/connection');
+const supervisor = createSupervisor({
+    connect: () => startBot(),
+    log: (line) => console.log(chalk.gray(line)),
+    onOpen: (socket) => {
+        clearPairingCodeFile();
+        backoff.reset();
+        console.log(chalk.green(`🌿 Connected as ${String(socket.user?.id || 'unknown').split(':')[0]}`));
+        startCoreServices(socket);
+    },
+    onClose: async (info, decision) => {
+        if (decision.action === 'reauth') {
+            // 401 only: the device was unlinked, so the credentials are dead.
+            try {
+                fs.rmSync('./session', { recursive: true, force: true });
+                console.log(chalk.yellow('Session folder deleted — please re-authenticate.'));
+            } catch (error) {
+                console.error('Error deleting session:', error.message);
+            }
+        }
+    },
+});
 
 const DATA_DIR = './data';
 const OWNER_FILE = `${DATA_DIR}/owner.json`;
@@ -210,6 +234,10 @@ async function startBot() {
     sock.ev.on('creds.update', saveCreds);
     store.bind(sock.ev);
 
+    // Register this socket as THE socket; a previous one is ended here so two
+    // can never be live at once on the same credentials.
+    supervisor.adopt(sock);
+
     // Same outbound governor as the full edition: fewer messages per command,
     // which matters even more on a small host sharing one WhatsApp number.
     require('./lib/notify').wrap(sock);
@@ -303,8 +331,11 @@ async function startBot() {
     }
 
     // ── Connection updates ──────────────────────────────────────────────────
+    // Open/close handling is delegated to the shared supervisor, so Mini and
+    // the full edition cannot drift apart on reconnect policy: one socket, one
+    // retry, 401 → re-pair, 440/403/411 → stop.
     sock.ev.on('connection.update', async (s) => {
-        const { connection, lastDisconnect, qr } = s;
+        const { connection, qr } = s;
 
         if (qr) {
             console.log(chalk.yellow('📱 Scan this QR code with WhatsApp (Settings → Linked Devices):'));
@@ -317,38 +348,7 @@ async function startBot() {
 
         if (connection === 'connecting') console.log(chalk.yellow('🔄 Connecting to WhatsApp…'));
 
-        if (connection === 'open') {
-            clearPairingCodeFile();
-            backoff.reset();
-            console.log(chalk.green(`🌿 Connected as ${sock.user?.id || 'unknown'}`));
-            startCoreServices(sock);
-        }
-
-        if (connection === 'close') {
-            if (shuttingDown) return;
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const loggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-
-            if (loggedOut) {
-                try {
-                    fs.rmSync('./session', { recursive: true, force: true });
-                    console.log(chalk.yellow('Session folder deleted — please re-authenticate.'));
-                } catch (error) {
-                    console.error('Error deleting session:', error.message);
-                }
-                return;
-            }
-
-            const wait = backoff.next();
-            console.log(chalk.red(`Connection closed (${statusCode ?? 'unknown'}). Reconnecting in ${(wait / 1000).toFixed(1)}s…`));
-            setTimeout(() => {
-                startBot().catch((error) => {
-                    console.error('Reconnect failed:', error.message);
-                    const again = backoff.next();
-                    setTimeout(() => startBot().catch(() => {}), again);
-                });
-            }, wait);
-        }
+        await supervisor.handle(sock, s);
     });
 
     // ── Anti-call (opt-in per owner command) ────────────────────────────────
@@ -387,6 +387,7 @@ async function shutdown(reason) {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[shutdown] ${reason || 'signal'} — flushing state and closing the socket`);
+    try { supervisor.stop(); } catch { /* ignore */ }
     clearInterval(storeTimer);
     try { require('./lib/productivity/scheduler').shutdown(); } catch { /* ignore */ }
     try { require('./lib/groupTimers').stop(); } catch { /* ignore */ }

@@ -25,7 +25,6 @@ const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetch, await, 
 const {
     default: makeWASocket,
     useMultiFileAuthState,
-    DisconnectReason,
     fetchLatestBaileysVersion,
     generateForwardMessageContent,
     prepareWAMessageMedia,
@@ -58,6 +57,8 @@ const dlHealth = require('./lib/dlHealth')
 // Outbound notification governor — keeps progress/completion chatter from
 // turning the account into a spam signal. See lib/notify.js.
 const notify = require('./lib/notify')
+// Socket lifecycle + the single reconnect loop. See lib/connection.js.
+const { createSupervisor } = require('./lib/connection')
 
 // Initialize store
 store.readFromFile()
@@ -142,6 +143,26 @@ let pairingCodeIssued = false
 let connectionAnnounced = false
 
 /**
+ * Baileys version, resolved once.
+ *
+ * `fetchLatestBaileysVersion()` is a network call. Doing it on every reconnect
+ * meant a failing handshake also had to survive a version lookup, and a slow
+ * one delayed the retry — so it is fetched once and reused.
+ */
+let resolvedVersion = null
+async function resolveVersion() {
+    if (resolvedVersion) return resolvedVersion
+    try {
+        const { version } = await fetchLatestBaileysVersion()
+        resolvedVersion = version
+    } catch (error) {
+        console.error(chalk.yellow(`[conn] could not fetch the Baileys version (${error.message}) — using the bundled default`))
+        resolvedVersion = undefined
+    }
+    return resolvedVersion
+}
+
+/**
  * Say plainly what the session on disk actually is.
  *
  * "It has creds.json but still asks for a number" is the single most confusing
@@ -204,9 +225,115 @@ function clearPairingCodeFile() {
 }
 
 
+/**
+ * Everything that happens when a connection actually OPENS.
+ *
+ * Kept out of the event handler so the supervisor owns the lifecycle: this
+ * function is called once per successful connection, by the supervisor, and
+ * never on a failed attempt.
+ */
+async function handleConnected(sock) {
+    clearPairingCodeFile() // linked — the code is spent
+
+    const selfNumber = String(sock.user?.id || '').split(':')[0]
+    console.log(chalk.magenta(' '))
+    console.log(chalk.yellow(`🌿 Connected as ${selfNumber || 'unknown'} — connection is OPEN`))
+
+    // Announce once per PROCESS, not once per connection.
+    //
+    // `connection: 'open'` fires on every successful (re)connect, so on a
+    // flapping network this rebuilt the same "Bot Connected Successfully!"
+    // bubble in the owner's own chat every few minutes — and it promised
+    // "join below channel" while the link was only in the forwarded
+    // context, so the sentence pointed at nothing.
+    if (!connectionAnnounced && selfNumber) {
+        connectionAnnounced = true;
+        await sock.sendMessage(`${selfNumber}@s.whatsapp.net`, {
+            text: style.card('BOT.SYS', [
+                ...style.fields([
+                    ['Status', 'ONLINE'],
+                    ['Version', settings.version || '—'],
+                    ['Since', new Date().toLocaleString()],
+                ]),
+                '',
+                style.tag('info', `CHANNEL: ${global.channelLink}`),
+            ]),
+            contextInfo: {
+                forwardingScore: 1,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: settings.newsletterJid || '120363424568988623@newsletter',
+                    newsletterName: settings.newsletterName || 'Optimus Bot',
+                    serverMessageId: -1
+                }
+            }
+        }).catch(() => { });
+    }
+
+    // Initialize reminder scheduler
+    scheduler.init(sock)
+
+    // Keep the PO token provider alive + start download health monitoring
+    potSupervisor.startSupervisor()
+    dlHealth.init(sock)
+
+    // Re-arm pending group open/close reverts so they survive a restart
+    try {
+        require('./lib/groupTimers').init(sock)
+    } catch (error) {
+        console.error('Error re-arming group timers:', error.message)
+    }
+
+    // Resume auto-bio if it was left switched on (commands/owner/autobio.js)
+    try {
+        const autobio = require('./commands/owner/autobio');
+        if (typeof autobio.initAutobio === 'function') await autobio.initAutobio(sock);
+    } catch (error) {
+        console.error('Error initialising autobio:', error.message)
+    }
+
+    await delay(1999)
+    console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname || 'OPTIMUS BOT'} ]`)}\n\n`))
+    console.log(chalk.cyan(`< ================================================== >`))
+    console.log(chalk.magenta(`\n${global.themeemoji || '•'} YT CHANNEL: ${settings.youtubeChannel || 'techhub-c6s'}`))
+    console.log(chalk.magenta(`${global.themeemoji || '•'} GITHUB: ${settings.githubRepo || 'CodeWithTayyab96/Optimus-Bot'}`))
+    console.log(chalk.magenta(`${global.themeemoji || '•'} WA NUMBER: ${owner}`))
+    console.log(chalk.magenta(`${global.themeemoji || '•'} CREDIT: ${settings.botOwner || 'Tayyab'}`))
+    console.log(chalk.green(`${global.themeemoji || '•'} 🤖 Bot Connected Successfully! ✅`))
+    console.log(chalk.blue(`Bot Version: ${settings.version} · commit ${settings.gitCommit || 'unknown'}`))
+}
+
+/**
+ * One socket, one reconnect loop, one decision.
+ *
+ * `connect` is this file's startXeonBotInc; the supervisor decides when to call
+ * it, and never more than once at a time. See lib/connection.js.
+ */
+const supervisor = createSupervisor({
+    connect: () => startXeonBotInc(),
+    log: (line) => console.log(chalk.gray(line)),
+    onOpen: (sock) => handleConnected(sock),
+    onClose: async (info, decision) => {
+        if (decision.action === 'reauth') {
+            // 401: the device was unlinked from the phone. The credentials are
+            // worthless now and keeping them would only produce the same 401 on
+            // the next boot — this is the ONE case where deleting is correct.
+            try {
+                rmSync('./session', { recursive: true, force: true })
+                console.log(chalk.yellow('[session] credentials removed — re-pair the bot'))
+            } catch (error) {
+                console.error('[session] could not remove the session folder:', error.message)
+            }
+        }
+        // Any other code keeps its credentials: a bad session (500) is usually a
+        // transient handshake failure, and re-pairing to fix a flaky socket is
+        // the wrong trade.
+    },
+})
+
 async function startXeonBotInc() {
     try {
-        let { version, isLatest } = await fetchLatestBaileysVersion()
+        const version = await resolveVersion()
         const { state, saveCreds } = await useMultiFileAuthState(`./session`)
         reportSessionState(state.creds)
         const msgRetryCounterCache = new NodeCache()
@@ -236,6 +363,12 @@ async function startXeonBotInc() {
 
         // Save credentials when they update
         XeonBotInc.ev.on('creds.update', saveCreds)
+
+        // Register this socket as THE socket. If a previous one is still alive
+        // it is ended here, before any handler below can attach — two live
+        // sockets on one credential pair is what produces a 440 conflict loop
+        // and double message handling.
+        supervisor.adopt(XeonBotInc)
 
         // Governor ON before any handler can send: it classifies every outbound
         // payload, coalesces progress lines, drops redundant completion notices
@@ -399,9 +532,15 @@ async function startXeonBotInc() {
     }
 
     // Connection handling
+    // Connection handling.
+    //
+    // The socket itself does nothing here beyond rendering the QR and saying
+    // "connecting": every open/close decision belongs to the supervisor, which
+    // guarantees one socket at a time and one retry at a time. See
+    // lib/connection.js for why the old inline handler looped.
     XeonBotInc.ev.on('connection.update', async (s) => {
-        const { connection, lastDisconnect, qr } = s
-        
+        const { connection, qr } = s
+
         if (qr) {
             // Baileys v7 deprecated `printQRInTerminal` and no longer prints the
             // QR for us — it only warns and emits nothing. The QR string arrives
@@ -414,103 +553,12 @@ async function startXeonBotInc() {
                 console.log(chalk.gray('Run without --qr to use a pairing code instead.'))
             }
         }
-        
+
         if (connection === 'connecting') {
             console.log(chalk.yellow('🔄 Connecting to WhatsApp...'))
         }
-        
-        if (connection == "open") {
-            clearPairingCodeFile() // linked — the code is spent
-            console.log(chalk.magenta(` `))
-            console.log(chalk.yellow(`🌿Connected to => ` + JSON.stringify(XeonBotInc.user, null, 2)))
 
-            // Announce once per PROCESS, not once per connection.
-            //
-            // `connection: 'open'` fires on every successful (re)connect, so on a
-            // flapping network this rebuilt the same "Bot Connected Successfully!"
-            // bubble in the owner's own chat every few minutes — and it promised
-            // "join below channel" while the link was only in the forwarded
-            // context, so the sentence pointed at nothing.
-            if (!connectionAnnounced) {
-                connectionAnnounced = true;
-                const botNumber = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
-                await XeonBotInc.sendMessage(botNumber, {
-                    text: style.card('BOT.SYS', [
-                        ...style.fields([
-                            ['Status', 'ONLINE'],
-                            ['Version', settings.version || '—'],
-                            ['Since', new Date().toLocaleString()],
-                        ]),
-                        '',
-                        style.tag('info', `CHANNEL: ${global.channelLink}`),
-                    ]),
-                    contextInfo: {
-                        forwardingScore: 1,
-                        isForwarded: true,
-                        forwardedNewsletterMessageInfo: {
-                            newsletterJid: settings.newsletterJid || '120363424568988623@newsletter',
-                            newsletterName: settings.newsletterName || 'Optimus Bot',
-                            serverMessageId: -1
-                        }
-                    }
-                }).catch(() => {});
-            }
-
-            // Initialize reminder scheduler
-            scheduler.init(XeonBotInc)
-
-            // Keep the PO token provider alive + start download health monitoring
-            potSupervisor.startSupervisor()
-            dlHealth.init(XeonBotInc)
-
-            // Re-arm pending group open/close reverts so they survive a restart
-            try {
-                require('./lib/groupTimers').init(XeonBotInc)
-            } catch (error) {
-                console.error('Error re-arming group timers:', error.message)
-            }
-
-            // Resume auto-bio if it was left switched on (commands/owner/autobio.js)
-            try {
-                const autobio = require('./commands/owner/autobio');
-                if (typeof autobio.initAutobio === 'function') await autobio.initAutobio(XeonBotInc);
-            } catch (error) {
-                console.error('Error initialising autobio:', error.message)
-            }
-
-            await delay(1999)
-            console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname || 'OPTIMUS BOT'} ]`)}\n\n`))
-            console.log(chalk.cyan(`< ================================================== >`))
-            console.log(chalk.magenta(`\n${global.themeemoji || '•'} YT CHANNEL: ${settings.youtubeChannel || 'techhub-c6s'}`))
-            console.log(chalk.magenta(`${global.themeemoji || '•'} GITHUB: ${settings.githubRepo || 'CodeWithTayyab96/Optimus-Bot'}`))
-            console.log(chalk.magenta(`${global.themeemoji || '•'} WA NUMBER: ${owner}`))
-            console.log(chalk.magenta(`${global.themeemoji || '•'} CREDIT: ${settings.botOwner || 'Tayyab'}`))
-            console.log(chalk.green(`${global.themeemoji || '•'} 🤖 Bot Connected Successfully! ✅`))
-            console.log(chalk.blue(`Bot Version: ${settings.version} · commit ${settings.gitCommit || 'unknown'}`))
-        }
-        
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut
-            const statusCode = lastDisconnect?.error?.output?.statusCode
-            
-            console.log(chalk.red(`Connection closed due to ${lastDisconnect?.error}, reconnecting ${shouldReconnect}`))
-            
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-                try {
-                    rmSync('./session', { recursive: true, force: true })
-                    console.log(chalk.yellow('Session folder deleted. Please re-authenticate.'))
-                } catch (error) {
-                    console.error('Error deleting session:', error)
-                }
-                console.log(chalk.red('Session logged out. Please re-authenticate.'))
-            }
-            
-            if (shouldReconnect) {
-                console.log(chalk.yellow('Reconnecting...'))
-                await delay(5000)
-                startXeonBotInc()
-            }
-        }
+        await supervisor.handle(XeonBotInc, s)
     })
 
     // Track recently-notified callers to avoid spamming messages
@@ -566,9 +614,12 @@ async function startXeonBotInc() {
 
     return XeonBotInc
     } catch (error) {
-        console.error('Error in startXeonBotInc:', error)
-        await delay(5000)
-        startXeonBotInc()
+        // A failure here (auth state unreadable, socket constructor throwing) is
+        // a failed connection attempt, not a crash. It goes through the same
+        // single scheduler as a close, so it cannot start a second loop.
+        console.error('Error in startXeonBotInc:', error.message)
+        supervisor.reportConnectError(error)
+        return null
     }
 }
 
@@ -597,6 +648,7 @@ async function startWithWarp() {
             console.warn('[warp] the bot will start without it — YouTube may stay blocked.');
         }
     }
+    // First attempt. Every later one is scheduled by the supervisor.
     startXeonBotInc().catch((error) => {
         console.error('Fatal error:', error);
         process.exit(1);
@@ -615,9 +667,17 @@ process.on('unhandledRejection', (err) => {
     console.error('Unhandled Rejection:', err)
 })
 
-// Clean shutdown of scheduler timers
-process.on('SIGTERM', () => { scheduler.shutdown(); dlHealth.stop(); potSupervisor.stop(); process.exit(0); })
-process.on('SIGINT', () => { scheduler.shutdown(); dlHealth.stop(); potSupervisor.stop(); process.exit(0); })
+// Clean shutdown: stop the reconnect loop FIRST, so a pending retry cannot
+// open a socket while the process is tearing down.
+function shutdown() {
+    try { supervisor.stop() } catch { /* ignore */ }
+    try { scheduler.shutdown() } catch { /* ignore */ }
+    try { dlHealth.stop() } catch { /* ignore */ }
+    try { potSupervisor.stop() } catch { /* ignore */ }
+    process.exit(0)
+}
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
 
 let file = require.resolve(__filename)
 fs.watchFile(file, () => {

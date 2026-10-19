@@ -414,6 +414,30 @@ describe('Scheduler', () => {
         scheduler.cancelTimer(r.id);
         expect(scheduler.getActiveCount()).toBe(0);
     });
+
+    /**
+     * A reconnect calls init() again, and init() re-schedules everything still
+     * pending. Before the fix that left the previous timer alive while the map
+     * pointed at the new one, so one reminder fired once per connection.
+     */
+    test('re-initialising does not double-schedule a reminder', () => {
+        const r = reminderStore.createReminder({
+            userJid: '123@s.whatsapp.net',
+            chatJid: '456@g.us',
+            text: 'Reconnect test',
+            dueAt: Date.now() + 600000,
+        });
+
+        const mockSock = { sendMessage: jest.fn() };
+        scheduler.init(mockSock);
+        scheduler.scheduleNew(r);
+        expect(scheduler.getActiveCount()).toBe(1);
+
+        // Simulate a reconnect: the same pending reminder is restored again.
+        scheduler.init(mockSock);
+
+        expect(scheduler.getActiveCount()).toBe(1);
+    });
 });
 
 describe('Duration Parsing', () => {

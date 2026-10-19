@@ -4,6 +4,49 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 🔌 Reconnect loop fixed — one socket, one retry
+
+`Stream Errored (ack)` was repeating every few seconds. It is not a logout and not a crash: Baileys v7
+maps a stream error whose reason has no code attribute to **500 `badSession`**, and the old handler
+treated every status except 401 as "retry", with a fixed 5-second delay, without ever ending the
+previous socket.
+
+That combination is self-sustaining:
+
+- the previous socket was never `end()`ed, so a "reconnect" could leave **two live sockets** on one
+  credential pair — double message handling and, with the same session used elsewhere, 440 conflicts;
+- a close delivered twice (or a close plus a throw in the connect path) scheduled **two** reconnects,
+  each of which scheduled two more;
+- 440 (`connectionReplaced`) was retried, which is a guaranteed fight with whichever process holds the
+  session;
+- `fetchLatestBaileysVersion()` ran on every retry, so a slow or failing version lookup delayed the
+  very reconnect it was part of.
+
+**`lib/connection.js` (new)** owns the lifecycle, and both entry points use it:
+
+- **One socket.** `adopt()` ends the previous socket and detaches its listeners before the new one is
+  registered, so two can never be live at once.
+- **One retry.** A close schedules at most one reconnect; a second close while a retry is pending is
+  ignored. Updates from a superseded socket are dropped entirely.
+- **Codes are respected.** 401 → re-pair (credentials removed, no retry); 403/411/**440** → stop, do
+  not reconnect; 500/515/428/408/503 → retry. Credentials are kept for everything except 401 — a bad
+  session is usually a transient handshake failure, and re-pairing to fix a flaky socket is the wrong
+  trade.
+- **Backoff** starts at 3s, doubles to a 60s cap, with downward-only jitter. A connection that stays up
+  for 60s resets the budget; a flapping one exhausts it and **stops** instead of looping forever.
+- **Real diagnostics:** `CLOSE #n — status 500 · bad session · Stream Errored (ack)` plus the decision
+  taken. JIDs and key blobs are redacted; nothing from the session is logged.
+
+**Also fixed:** the reminder scheduler re-scheduled every pending reminder on each reconnect without
+clearing the previous timer, so one reminder fired once per connection. `scheduleTimer()` now clears
+the existing timer first, and `init()` is idempotent.
+
+Tests: `scripts/smoke-reconnect.js` (71 checks) — classification for every disconnect code, single
+retry under duplicate closes, stale-socket rejection, adopt-ends-previous, backoff shape and cap,
+budget reset vs exhaustion, shutdown cancelling a pending retry, connect-throw routing, credential
+redaction, and the entry-point wiring (creds.update before adopt, no inline reconnect). Plus a Jest
+case for the duplicate reminder timer.
+
 ### 🖥️ Terminal design system — every message rebuilt
 
 Optimus now speaks like a diagnostic console rather than a chatbot:
