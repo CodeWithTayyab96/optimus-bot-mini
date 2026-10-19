@@ -334,7 +334,12 @@ const close = (statusCode, message = 'Stream Errored (ack)') => ({
         const fs = require('fs');
         const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
-        for (const file of ['index.js', 'mini.js']) {
+        // The Optimus-Bot repo ships without the Mini edition, so only assert
+        // the entry points that actually exist in this tree.
+        const entryPoints = ['index.js', 'mini.js'].filter((f) => fs.existsSync(path.join(__dirname, '..', f)));
+        check('at least one entry point is present', entryPoints.length > 0, entryPoints.join(', '));
+
+        for (const file of entryPoints) {
             const src = read(file);
 
             check(`${file}: uses the shared supervisor`, /createSupervisor\s*\(/.test(src));
