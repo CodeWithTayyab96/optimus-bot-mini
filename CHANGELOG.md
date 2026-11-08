@@ -4,6 +4,41 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 📥 Google Drive + GitHub downloads (local-first)
+
+Adds `.gdrive` (aliases `.gdl`, `.drivedl`) and `.githubdl` (`.gitdl`, `.ghdl`), both wired into
+the `.download <link>` auto-router. Neither uses a third-party downloader API: Drive is fetched
+over plain HTTPS (including the `confirm`/`uuid` second hop required for large public files), and
+GitHub supports repo archives (default branch via the public REST API), release assets, release
+tags (first published asset), `blob` links and `raw.githubusercontent.com` URLs.
+
+`lib/safeDownload.js` is the single trust boundary for both: https only, no embedded credentials,
+no raw IP hosts, an explicit host allowlist re-checked on **every** redirect hop (manual redirects,
+max 5), a hard timeout per hop, cookies carried between hops, and a configurable 64 MiB cap
+(`DOWNLOAD_MAX_BYTES`) enforced against both `Content-Length` and the streamed bytes. Private
+Drive files/folders, private repos, LFS pointers and GitHub directories fail with an explicit
+message rather than sending an HTML page to the chat.
+
+### 🩹 Optional KnightBot API audio fallback (off by default)
+
+Adds a **strictly last-resort** fourth step to the `.song` / `.play` audio chain in `lib/ytAudio.js`:
+`yt-dlp` → direct stream URL → RapidAPI → KnightBot API. It is inert unless the operator sets
+`KNIGHTBOT_API_ENABLED=1` **and** supplies a private `KNIGHTBOT_API_KEY` (the shared demo key
+`knight`, placeholder values and plain-http base URLs are refused). See `.env.example` and
+`docs/knightbot-api-assessment.md` for the trade-offs: the service has no uptime guarantee and
+logs the URLs it is asked to fetch, so it must never displace the local sources.
+
+`lib/knightbotApi.js` keeps the key in the `X-API-Key` **header** (never a GET query string), applies
+a request timeout and at most one retry on 429/5xx/network errors, rejects non-`success` responses,
+refuses off-host or plain-http file URLs, disables redirects on the file fetch, and buffers the
+audio immediately — hosted `/files/` links expire after ~5 minutes, so no URL is ever handed to a
+command. Undocumented job-style responses are polled via `progressId` with a bounded deadline.
+
+`lib/dlHealth.js` gains a seventh probe (`/api/tools/calc` plus remaining quota from `/api/usage`),
+but only when the fallback is enabled — a disabled service must not generate a permanent DOWN alert.
+Tests: `scripts/smoke-knightbot-api.js` (70 checks, entirely offline with a stubbed HTTP client),
+registered in `scripts/run-tests.js`.
+
 ### 🔌 Reconnect loop fixed — one socket, one retry
 
 `Stream Errored (ack)` was repeating every few seconds. It is not a logout and not a crash: Baileys v7
