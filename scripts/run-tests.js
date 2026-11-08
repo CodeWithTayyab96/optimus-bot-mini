@@ -87,6 +87,7 @@ const checks = [
     ['status-stanza ack (#2858) smoke', NODE, ['scripts/smoke-status-ack.js']],
     ['knightbot api fallback smoke', NODE, ['scripts/smoke-knightbot-api.js']],
     ['drive + github download smoke', NODE, ['scripts/smoke-gdrive-github.js']],
+    ['message style consistency smoke', NODE, ['scripts/smoke-style-consistency.js']],
     ['model availability smoke', NODE, ['scripts/smoke-models.js']],
     ['AI config smoke', NODE, ['scripts/smoke-ai-config.js']],
     ['Shadow→Optimus port smoke', NODE, ['scripts/smoke-shadow-ports.js']],
