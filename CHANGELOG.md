@@ -4,6 +4,43 @@ All notable changes to Optimus Bot are documented here.
 
 ## [Unreleased]
 
+### 🎨 Message redesign — the "icon rail" card
+
+Every card the bot sends is now a framed box instead of a flat heading + rule:
+
+```
+╔═ OPTIMUS · COMMAND_INDEX.SYS ═══════════╗
+║ 🤖 218 COMMAND(S) AVAILABLE TO YOU       ║
+║ > PICK A CATEGORY:                       ║
+║                                          ║
+║ [01] 📦 GENERAL    :: 26 CMD · .general  ║
+║ [02] 🛡️ ADMIN      :: 50 CMD · .admin   ║
+╚══════════════════════════════════════════╝
+```
+
+`lib/messageStyle.js` — `card()`/`box()` draw a `╔═ … ═╗` / `║ … ║` / `╚═══╝` rail whose top rail
+carries the module name (`OPTIMUS · <MODULE>.SYS`), optionally preceded by a section emoji. The
+inner content area is capped at 40 columns (the frame adds 4) and every row is padded so the rails
+line up. `commands/general/help.js` now uses the `CATEGORY_ICONS` table that was previously defined
+but unused, so each category carries its own emoji in the index rows and in its per-category card;
+the index header and hint lines are emoji-led (`🤖` / `ℹ️`) rather than `[SYSTEM]` / `[INFO]`.
+
+The `[TAG]` contract is deliberately unchanged: `tag()` still emits `[PROCESS]`, `[SUCCESS]`,
+`[ERROR]`, `[WARNING]`, `[INFO]`, `[SYSTEM]` and `[PROMPT]`, because `lib/notify.js` classifies
+outbound messages by that prefix to decide what the governor may coalesce. Progress and completion
+lines stay as bare tag lines (never boxed), and every boxed card is multi-line, so the outbound
+governor behaves exactly as before. `rule()`/`header()` remain exported as legacy flat primitives.
+
+### ✨ Consistent chat style — no more hand-rolled emoji lines
+
+87 raw `❌ / ⚠️ / ✅ / ⏳` status sends across 52 command files were converted to the shared
+`style.error` / `style.warning` / `style.success` helpers, so all replies share one voice. A side
+effect is that untagged progress lines such as `⏳ Clearing bot messages...` now carry `[PROCESS]`
+again, which restores the outbound governor's coalescing for them (previously they were classified
+as essential and bypassed it). `scripts/smoke-style-consistency.js` (12 checks) is a new guard that
+fails if any command reintroduces a raw emoji status prefix or calls a style helper without
+importing the module.
+
 ### 📥 Google Drive + GitHub downloads (local-first)
 
 Adds `.gdrive` (aliases `.gdl`, `.drivedl`) and `.githubdl` (`.gitdl`, `.ghdl`), both wired into
